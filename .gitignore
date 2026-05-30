@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ESPHome / firmware build artifacts
+.esphome/
+*.bin
+build/
+
+# Secrets (never commit)
+secrets.yaml
+*.key
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
