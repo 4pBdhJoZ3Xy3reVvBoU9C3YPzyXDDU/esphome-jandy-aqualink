@@ -12,6 +12,9 @@ build/
 secrets.yaml
 *.key
 
+# Local rollback copy of the live device config (carries the inline WiFi password)
+firmware/pool-bridge-original.yaml
+
 # Editor / OS
 .vscode/
 .idea/
