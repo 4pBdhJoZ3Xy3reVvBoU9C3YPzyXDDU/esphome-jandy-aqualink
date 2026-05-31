@@ -235,12 +235,12 @@ button:
     name: "Pump Speed: Night"
     icon: "mdi:weather-night"
     on_press:
-      - lambda: "id(jandy_comp).set_pump_rpm(1100);"   # below the salt cutoff; tuned at the pad
+      - lambda: "id(jandy_comp).set_pump_rpm(1100);"   # quiet overnight circulation, below salt floor by design (live-confirmed 2026-05-31)
   - platform: template
     name: "Pump Speed: Low"
     icon: "mdi:speedometer-slow"
     on_press:
-      - lambda: "id(jandy_comp).set_pump_rpm(1600);"   # efficient, still chlorinating; tuned at the pad
+      - lambda: "id(jandy_comp).set_pump_rpm(2000);"   # salt flow floor ~1850 (live-tuned 2026-05-31) + 150 cushion
   - platform: template
     name: "Pump Speed: Normal"
     icon: "mdi:speedometer-medium"
