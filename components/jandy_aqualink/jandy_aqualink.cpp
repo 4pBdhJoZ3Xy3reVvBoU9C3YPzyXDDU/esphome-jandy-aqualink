@@ -138,8 +138,17 @@ void JandyAqualink::task_loop() {
         if (ts.has_air) t_air_ = ts.air;
         if (ts.has_pool) t_pool_ = ts.pool;
         if (ts.has_spa) t_spa_ = ts.spa;
+        if (ts.has_rpm) iaq_rpm_ = ts.rpm;
+        if (ts.has_watts) iaq_watts_ = ts.watts;
         iaq_water_mode_ = iaq_reader_.water_mode();
         iaq_current_page_ = iaq_reader_.current_page();
+        // After a requested STATUS read completes (page end on the status page),
+        // arm HOME so the panel resumes pushing temperatures.
+        if (iaq_return_home_ && f.cmd() == 0x28 &&
+            (iaq_reader_.current_page() == 0x2A || iaq_reader_.current_page() == 0x5B)) {
+          iaq_return_home_ = false;
+          iaq_armed_key_ = jandy::KEY_IAQT_HOME;  // 0x01
+        }
         portEXIT_CRITICAL(&mux_);
       } else {
         portENTER_CRITICAL(&mux_);
@@ -234,6 +243,24 @@ void JandyAqualink::iaq_nav(uint8_t key) {
   iaq_armed_key_ = key;
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "ARMED iAq NAV key 0x%02X -> sent on next iAqualink poll (one press)", key);
+}
+
+void JandyAqualink::read_pump_speed() {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "read pump speed REFUSED: safety interlock is OFF");
+    return;
+  }
+  if (!iaq_presence_) {
+    ESP_LOGW(TAG, "read pump speed REFUSED: iAqualink presence is OFF");
+    return;
+  }
+  // View the STATUS page (global key 0x06, view-only) to read RPM/watts; the
+  // core-1 task arms HOME once the status page is read so temps keep updating.
+  portENTER_CRITICAL(&mux_);
+  iaq_return_home_ = true;
+  iaq_armed_key_ = jandy::KEY_IAQT_STATUS;  // 0x06
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "read pump speed: viewing STATUS page, will return to HOME");
 }
 
 void JandyAqualink::request_pool_mode() {
@@ -378,7 +405,7 @@ void JandyAqualink::dump_observations() {
 
 void JandyAqualink::loop() {
   uint32_t polls, errors, latency, frames, iaq;
-  int air, pool, spa;
+  int air, pool, spa, rpm, watts;
   portENTER_CRITICAL(&mux_);
   polls = acks_sent_;
   errors = bad_cksum_;
@@ -388,6 +415,8 @@ void JandyAqualink::loop() {
   air = t_air_;
   pool = t_pool_;
   spa = t_spa_;
+  rpm = iaq_rpm_;
+  watts = iaq_watts_;
   portEXIT_CRITICAL(&mux_);
 
   if (air_temp_sensor_ && air != -999 && air != pub_air_) {
@@ -401,6 +430,14 @@ void JandyAqualink::loop() {
   if (spa_temp_sensor_ && spa != -999 && spa != pub_spa_) {
     spa_temp_sensor_->publish_state(spa);
     pub_spa_ = spa;
+  }
+  if (pump_rpm_sensor_ && rpm != -1 && rpm != pub_rpm_) {
+    pump_rpm_sensor_->publish_state(rpm);
+    pub_rpm_ = rpm;
+  }
+  if (pump_watts_sensor_ && watts != -1 && watts != pub_watts_) {
+    pump_watts_sensor_->publish_state(watts);
+    pub_watts_ = watts;
   }
 
   if (polls_sensor_ && polls != pub_polls_) {

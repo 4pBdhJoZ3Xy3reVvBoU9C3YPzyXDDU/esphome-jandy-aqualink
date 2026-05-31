@@ -33,6 +33,8 @@ class JandyAqualink : public Component {
   void set_air_temp_sensor(sensor::Sensor *s) { air_temp_sensor_ = s; }
   void set_pool_temp_sensor(sensor::Sensor *s) { pool_temp_sensor_ = s; }
   void set_spa_temp_sensor(sensor::Sensor *s) { spa_temp_sensor_ = s; }
+  void set_pump_rpm_sensor(sensor::Sensor *s) { pump_rpm_sensor_ = s; }
+  void set_pump_watts_sensor(sensor::Sensor *s) { pump_watts_sensor_ = s; }
 
   // Phase 2 gated keypress controls. Called from core 0 (HA/web/lambda). The
   // master interlock is OFF by default; with it off the device is exactly v1
@@ -67,6 +69,10 @@ class JandyAqualink : public Component {
   // decoder confirms we are on the HOME page, so it can never mean a grid tile on
   // another page. Sends exactly one key; never an equipment or value keycode.
   void iaq_nav(uint8_t key);
+
+  // Briefly view the STATUS page to read pump RPM/watts, then return to HOME so
+  // temperatures keep updating. Gated by the master interlock + iAqualink presence.
+  void read_pump_speed();
 
  protected:
   static void task_trampoline(void *arg);
@@ -113,7 +119,10 @@ class JandyAqualink : public Component {
   // not yet read. loop() on core 0 publishes them on change.
   jandy::IaqReader iaq_reader_;
   volatile int t_air_{-999}, t_pool_{-999}, t_spa_{-999};
+  volatile int iaq_rpm_{-1}, iaq_watts_{-1};   // pump readings from the STATUS page
+  volatile bool iaq_return_home_{false};       // after a STATUS read, return to HOME
   int pub_air_{-1000}, pub_pool_{-1000}, pub_spa_{-1000};
+  int pub_rpm_{-1000}, pub_watts_{-1000};
 
   // iAqualink one-shot keypress: -1 none, else the keycode to send in the next
   // ACK to 0x33. iaq_water_mode_ mirrors the decoder's current mode to core 0.

@@ -73,6 +73,13 @@ jandy_aqualink:
     name: Pool Water Temp
   spa_temp:
     name: Spa Water Temp
+  # Pump RPM/watts, read from the iAqualink STATUS page on demand (see the Read
+  # Pump Speed button). The panel shows either temps or pump speed at a time, so
+  # this updates when the Status page is viewed, not continuously.
+  pump_rpm:
+    name: Pool Pump Speed
+  pump_watts:
+    name: Pool Pump Watts
 
 # --- Phase 2 gated keypress controls ---
 # Reading temperatures needs the panel to redraw its display, which it only does
@@ -212,6 +219,14 @@ button:
     icon: "mdi:chevron-left"
     on_press:
       - lambda: "id(jandy_comp).iaq_nav(0x20);"
+
+  # Read the live pump speed: briefly view the STATUS page (RPM/watts), then auto-
+  # return to HOME so temperatures keep updating. Gated by the interlock + presence.
+  - platform: template
+    name: "Read Pump Speed"
+    icon: "mdi:pump"
+    on_press:
+      - lambda: "id(jandy_comp).read_pump_speed();"
 
 # Diagnostics (unchanged from the bridge build).
 sensor:

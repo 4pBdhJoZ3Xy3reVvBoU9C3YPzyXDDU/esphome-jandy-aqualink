@@ -23,6 +23,8 @@ CONF_CHECKSUM_ERRORS = "checksum_errors"
 CONF_AIR_TEMP = "air_temp"
 CONF_POOL_TEMP = "pool_temp"
 CONF_SPA_TEMP = "spa_temp"
+CONF_PUMP_RPM = "pump_rpm"
+CONF_PUMP_WATTS = "pump_watts"
 
 
 def _temp_sensor():
@@ -62,6 +64,19 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_AIR_TEMP): _temp_sensor(),
         cv.Optional(CONF_POOL_TEMP): _temp_sensor(),
         cv.Optional(CONF_SPA_TEMP): _temp_sensor(),
+        cv.Optional(CONF_PUMP_RPM): sensor.sensor_schema(
+            unit_of_measurement="RPM",
+            accuracy_decimals=0,
+            state_class=STATE_CLASS_MEASUREMENT,
+            icon="mdi:pump",
+        ),
+        cv.Optional(CONF_PUMP_WATTS): sensor.sensor_schema(
+            unit_of_measurement="W",
+            accuracy_decimals=0,
+            device_class="power",
+            state_class=STATE_CLASS_MEASUREMENT,
+            icon="mdi:flash",
+        ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -93,3 +108,9 @@ async def to_code(config):
     if CONF_SPA_TEMP in config:
         s = await sensor.new_sensor(config[CONF_SPA_TEMP])
         cg.add(var.set_spa_temp_sensor(s))
+    if CONF_PUMP_RPM in config:
+        s = await sensor.new_sensor(config[CONF_PUMP_RPM])
+        cg.add(var.set_pump_rpm_sensor(s))
+    if CONF_PUMP_WATTS in config:
+        s = await sensor.new_sensor(config[CONF_PUMP_WATTS])
+        cg.add(var.set_pump_watts_sensor(s))
