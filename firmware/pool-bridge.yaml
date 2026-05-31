@@ -53,6 +53,7 @@ external_components:
 # v1 publishes presence-health diagnostics; reading temperatures needs the
 # keypad navigation layer (a later phase, see docs/).
 jandy_aqualink:
+  id: jandy_comp
   tx_pin: 19
   rx_pin: 22
   baud_rate: 9600
@@ -63,6 +64,59 @@ jandy_aqualink:
     name: Pool Keypad Reply Latency
   checksum_errors:
     name: Pool Bus Checksum Errors
+
+# --- Phase 2 gated keypress controls ---
+# Reading temperatures needs the panel to redraw its display, which it only does
+# in response to a keypad button press. These controls send ONE display-only
+# navigation key at a time, gated behind a master safety switch.
+#
+# Safety model:
+#   - The switch defaults OFF and boots OFF (restore_mode ALWAYS_OFF). With it
+#     off, the firmware is exactly v1: inert presence, no key ever sent.
+#   - A button only arms a key when the switch is on; otherwise it is refused
+#     and logged. Turning the switch off is the hard abort (clears any armed
+#     key and reverts to inert).
+#   - Only the five display-only nav keys are exposed. Equipment keys (pump,
+#     spa, heaters, aux, override, hold) are not reachable, and the component
+#     refuses any key outside its navigation allowlist.
+switch:
+  - platform: template
+    name: "Pool Keypad Keypress Armed"
+    id: keypad_interlock
+    icon: "mdi:gesture-tap-button"
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - lambda: "id(jandy_comp).set_interlock(true);"
+    turn_off_action:
+      - lambda: "id(jandy_comp).set_interlock(false);"
+
+button:
+  - platform: template
+    name: "Pool Keypad Press MENU"
+    icon: "mdi:menu"
+    on_press:
+      - lambda: "id(jandy_comp).arm_key(0x09);"   # KEY_MENU
+  - platform: template
+    name: "Pool Keypad Press RIGHT"
+    icon: "mdi:arrow-right-bold"
+    on_press:
+      - lambda: "id(jandy_comp).arm_key(0x18);"   # KEY_RIGHT
+  - platform: template
+    name: "Pool Keypad Press LEFT"
+    icon: "mdi:arrow-left-bold"
+    on_press:
+      - lambda: "id(jandy_comp).arm_key(0x13);"   # KEY_LEFT
+  - platform: template
+    name: "Pool Keypad Press ENTER"
+    icon: "mdi:keyboard-return"
+    on_press:
+      - lambda: "id(jandy_comp).arm_key(0x1D);"   # KEY_ENTER
+  - platform: template
+    name: "Pool Keypad Press CANCEL"
+    icon: "mdi:close-octagon"
+    on_press:
+      - lambda: "id(jandy_comp).arm_key(0x0E);"   # KEY_CANCEL
 
 # Diagnostics (unchanged from the bridge build).
 sensor:

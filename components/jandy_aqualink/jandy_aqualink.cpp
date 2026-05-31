@@ -59,25 +59,112 @@ void JandyAqualink::task_loop() {
       }
 
       if (jandy::is_poll_to(f, keypad_addr_)) {
-        // Reply in-slot with the inert presence ACK (no key). Time the
-        // detect-to-write gap.
+        // Pick the reply: inert presence by default, a one-shot key only when
+        // the interlock is on AND a key is armed. Consume it atomically. No
+        // logging happens before the write, so the reply stays in-slot.
+        const uint8_t *ack = jandy::ACK_PRESENCE;
+        uint8_t keyack[jandy::ACK_PRESENCE_LEN];
+        int sent_key = -1;
+        portENTER_CRITICAL(&mux_);
+        if (interlock_ && armed_key_ >= 0) {
+          sent_key = armed_key_;
+          armed_key_ = -1;  // one press, one time
+        }
+        portEXIT_CRITICAL(&mux_);
+        if (sent_key >= 0) {
+          jandy::build_key_ack(static_cast<uint8_t>(sent_key), keyack);
+          ack = keyack;
+        }
+
         int64_t t0 = esp_timer_get_time();
-        uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(jandy::ACK_PRESENCE),
-                         jandy::ACK_PRESENCE_LEN);
+        uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(ack), jandy::ACK_PRESENCE_LEN);
         uint32_t dt = static_cast<uint32_t>(esp_timer_get_time() - t0);
         portENTER_CRITICAL(&mux_);
         frames_++;
         polls_to_us_++;
         acks_sent_++;
         last_reply_us_ = dt;
+        if (sent_key >= 0) keys_sent_++;
         portEXIT_CRITICAL(&mux_);
+
+        if (sent_key >= 0) {
+          ESP_LOGW(TAG, "SENT KEY 0x%02X in ACK %02X %02X %02X %02X %02X %02X %02X %02X %02X (reply %u us)",
+                   sent_key, ack[0], ack[1], ack[2], ack[3], ack[4], ack[5], ack[6], ack[7], ack[8], dt);
+        }
       } else {
         portENTER_CRITICAL(&mux_);
         frames_++;
         portEXIT_CRITICAL(&mux_);
+        maybe_log_frame(f);  // non-poll only; never delays a reply
       }
     }
   }
+}
+
+// --- Phase 2 gated keypress controls (core 0) ---
+
+void JandyAqualink::set_interlock(bool on) {
+  portENTER_CRITICAL(&mux_);
+  interlock_ = on;
+  if (!on) armed_key_ = -1;  // hard abort: clear any armed key, revert to inert
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "safety interlock %s%s", on ? "ON" : "OFF", on ? "" : " (armed key cleared)");
+}
+
+void JandyAqualink::arm_key(uint8_t key) {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "keypress REFUSED: safety interlock is OFF (key=0x%02X)", key);
+    return;
+  }
+  if (!jandy::is_safe_nav_key(key)) {
+    ESP_LOGW(TAG, "keypress REFUSED: key 0x%02X is not a display-only nav key", key);
+    return;
+  }
+  uint8_t ack[jandy::ACK_PRESENCE_LEN];
+  jandy::build_key_ack(key, ack);
+  if (ack[5] == 0x10 || ack[6] == 0x10) {  // would need wire stuffing; refuse
+    ESP_LOGW(TAG, "keypress REFUSED: ack for 0x%02X contains a DLE byte", key);
+    return;
+  }
+  portENTER_CRITICAL(&mux_);
+  armed_key_ = key;
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "ARMED key 0x%02X -> sends ACK %02X %02X %02X %02X %02X %02X %02X %02X %02X on next poll",
+           key, ack[0], ack[1], ack[2], ack[3], ack[4], ack[5], ack[6], ack[7], ack[8]);
+}
+
+// Verbose capture of non-poll frames: display-text (CMD_MSG 0x03 / CMD_MSG_LONG
+// 0x04, the Phase 2 prize) always, and frames to our keypad on change and at
+// most once per 2 s so the repetitive status stream does not flood the log.
+void JandyAqualink::maybe_log_frame(const jandy::Frame &f) {
+  uint8_t cmd = f.cmd();
+  bool is_msg = (cmd == 0x03 || cmd == 0x04);
+  bool to_us = (f.dest() == keypad_addr_);
+  if (!is_msg && !to_us) return;
+
+  if (!is_msg) {
+    if (f.raw == last_status_) return;  // identical to last logged status
+    uint32_t now = static_cast<uint32_t>(esp_timer_get_time());
+    if (!last_status_.empty() && (now - last_status_log_us_) < 2000000u) return;
+    last_status_log_us_ = now;
+    last_status_ = f.raw;
+  }
+
+  char hex[3 * 40 + 1];
+  char asc[40 + 1];
+  static const char *const H = "0123456789ABCDEF";
+  size_t n = f.raw.size() > 40 ? 40 : f.raw.size();
+  size_t hp = 0;
+  for (size_t i = 0; i < n; ++i) {
+    uint8_t b = f.raw[i];
+    hex[hp++] = H[b >> 4];
+    hex[hp++] = H[b & 0x0F];
+    hex[hp++] = ' ';
+    asc[i] = (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '.';
+  }
+  hex[hp] = '\0';
+  asc[n] = '\0';
+  ESP_LOGI(TAG, "RX cmd=0x%02X dest=0x%02X | %s| %s", cmd, f.dest(), hex, asc);
 }
 
 void JandyAqualink::loop() {

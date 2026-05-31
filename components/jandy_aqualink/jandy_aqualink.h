@@ -31,9 +31,18 @@ class JandyAqualink : public Component {
   void set_latency_sensor(sensor::Sensor *s) { latency_sensor_ = s; }
   void set_errors_sensor(sensor::Sensor *s) { errors_sensor_ = s; }
 
+  // Phase 2 gated keypress controls. Called from core 0 (HA/web/lambda). The
+  // master interlock is OFF by default; with it off the device is exactly v1
+  // (inert presence). arm_key queues one display-only nav key for the next
+  // poll, and only if the interlock is on and the key is in the allowlist.
+  void arm_key(uint8_t key);
+  void set_interlock(bool on);
+  bool interlock() const { return interlock_; }
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
+  void maybe_log_frame(const jandy::Frame &f);
 
   int tx_pin_{19};
   int rx_pin_{22};
@@ -53,6 +62,17 @@ class JandyAqualink : public Component {
   volatile uint32_t acks_sent_{0};
   volatile uint32_t bad_cksum_{0};
   volatile uint32_t last_reply_us_{0};
+
+  // Keypress gating. interlock_ is the master safety switch; armed_key_ is the
+  // one-shot key to send on the next poll (-1 = none). Touched by core-0
+  // controls and the core-1 task, guarded by mux_.
+  volatile bool interlock_{false};
+  volatile int16_t armed_key_{-1};
+  volatile uint32_t keys_sent_{0};
+
+  // Verbose capture dedupe/rate-limit (core-1 task only; not shared).
+  std::vector<uint8_t> last_status_;
+  uint32_t last_status_log_us_{0};
 
   // loop()-owned, for publish-on-change.
   uint32_t pub_polls_{0xFFFFFFFF};

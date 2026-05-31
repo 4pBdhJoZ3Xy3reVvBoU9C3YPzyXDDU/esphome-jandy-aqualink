@@ -194,6 +194,40 @@ bool selftest(std::string &detail) {
     if (r.state.has_air && r.state.air == 167 && r.state.has_pool && r.state.pool == 91) ok++;
   }
 
+  // build_key_ack: the safe nav keys produce exact expected ACK bytes, key 0x00
+  // reproduces ACK_PRESENCE, and equipment keys are refused. A wrong byte here
+  // would put an unintended key on the bus, so this is a safety gate.
+  {
+    total++;
+    struct K {
+      uint8_t key;
+      uint8_t exp[9];
+    };
+    const K ks[] = {
+        {KEY_MENU, {0x10, 0x02, 0x00, 0x01, 0x80, 0x09, 0x9C, 0x10, 0x03}},
+        {KEY_CANCEL, {0x10, 0x02, 0x00, 0x01, 0x80, 0x0E, 0xA1, 0x10, 0x03}},
+        {KEY_LEFT, {0x10, 0x02, 0x00, 0x01, 0x80, 0x13, 0xA6, 0x10, 0x03}},
+        {KEY_RIGHT, {0x10, 0x02, 0x00, 0x01, 0x80, 0x18, 0xAB, 0x10, 0x03}},
+        {KEY_ENTER, {0x10, 0x02, 0x00, 0x01, 0x80, 0x1D, 0xB0, 0x10, 0x03}},
+    };
+    bool pass = true;
+    for (const auto &k : ks) {
+      uint8_t got[9];
+      build_key_ack(k.key, got);
+      for (int i = 0; i < 9; ++i)
+        if (got[i] != k.exp[i]) pass = false;
+      if (!is_safe_nav_key(k.key)) pass = false;
+    }
+    uint8_t inert[9];
+    build_key_ack(0x00, inert);
+    for (int i = 0; i < 9; ++i)
+      if (inert[i] != ACK_PRESENCE[i]) pass = false;
+    const uint8_t eq[] = {0x02, 0x01, 0x12, 0x17, 0x1E, 0x19, 0x05, 0x0A, 0x0F};
+    for (uint8_t e : eq)
+      if (is_safe_nav_key(e)) pass = false;
+    if (pass) ok++;
+  }
+
   detail = std::to_string(ok) + "/" + std::to_string(total);
   return ok == total;
 }

@@ -107,3 +107,44 @@ class FrameExtractor:
                 else:
                     self._state = _SEARCH  # DLE not followed by STX
         return out
+
+
+# --- Phase 2 keypress layer: the ACK that carries a button press ------------
+#
+# A registered AllButton keypad answers each poll with an ACK. The pending-key
+# byte in that ACK is the press: 0x00 means "no key" (inert presence), and a
+# keycode there tells the panel a button was pressed, which makes it redraw and
+# push display text. ACK shape: 10 02 00 01 80 <key> <cksum> 10 03, where cmd
+# 0x01 = CMD_ACK and ack_type 0x80 = ACK_ALLB_SIM (Jandy's AllButton simulator
+# ack). Checksum is the usual sum over the logical frame up to the checksum.
+ACK_ALLB_SIM = 0x80
+
+# Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
+# the menu/display and never actuate equipment, so they are the only keys this
+# build will ever transmit. Equipment keys (pump 0x02, spa 0x01, pool heater
+# 0x12, spa heater 0x17, aux* , override 0x1e, hold 0x19) are deliberately
+# absent: there is no constant for them here and is_safe_nav_key refuses them.
+KEY_MENU = 0x09
+KEY_CANCEL = 0x0E
+KEY_LEFT = 0x13
+KEY_RIGHT = 0x18
+KEY_ENTER = 0x1D
+
+_SAFE_NAV_KEYS = frozenset({KEY_MENU, KEY_CANCEL, KEY_LEFT, KEY_RIGHT, KEY_ENTER})
+
+
+def is_safe_nav_key(key: int) -> bool:
+    """True only for display-only navigation keys (never equipment)."""
+    return key in _SAFE_NAV_KEYS
+
+
+def build_key_ack(key: int) -> bytes:
+    """Build the 9-byte AllButton ACK carrying `key` in the pending-key slot.
+
+    key=0x00 reproduces the proven inert presence ACK. The result is a
+    self-consistent (checksum-valid) frame. For the allowlisted nav keys it
+    contains no 0x10, so it can be written to the bus without byte-stuffing.
+    """
+    body = bytes([DLE, STX, 0x00, 0x01, ACK_ALLB_SIM, key & 0xFF])
+    cksum = sum(body) & 0xFF
+    return body + bytes([cksum, DLE, ETX])
