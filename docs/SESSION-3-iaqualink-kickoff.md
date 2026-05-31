@@ -35,6 +35,15 @@ So: emulate the iAqualink device at 0x33, complete its handshake, receive the
   five-key allowlist, on-device selftest, HA + web REST controls. See
   `project_pool_controller_phase2.md` for the full Session 2 record.
 
+## Panel mode (operational, confirm before testing)
+Test the iAqualink read with the panel in **Auto**, not Service. Auto is the
+pool's normal running mode and is where the panel was observed polling the 0x33
+iAqualink slot every cycle; Service mode is for local servicing and typically
+locks out the RS485 remote controllers (the path we are using). Observed: Service
+mode does NOT stop the panel polling our AllButton keypad at 0x08 (presence keeps
+climbing), so the device is safe to leave on the bus overnight in either mode.
+Founder may keep it in Service overnight and flip to Auto when ready to test.
+
 ## The build (incremental, validate each step)
 1. Add iAqualink presence: answer polls to 0x33 with the iAqualink ACK (study
    AqualinkD `source/aq_serial.c` iAqualink path + `source/iaqualink_aq_programmer.c`;
