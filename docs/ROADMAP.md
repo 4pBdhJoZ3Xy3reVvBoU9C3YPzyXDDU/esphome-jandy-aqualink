@@ -68,3 +68,31 @@ this needs a small per-panel mapping config.
 - Auto-detect a free keypad address by listening before answering.
 - Desync and bus-error recovery hardening for long-term unattended operation.
 - A debug build flag that re-enables raw per-frame logging for field diagnosis.
+
+## Status + remaining sessions (updated 2026-05-31, Session 6)
+
+SHIPPED and live-tested: keypad presence (v1), temps via 0x33 emulation, home
+controls (filter pump, pool light, cleaner, air blower, pool mode), pump speed
+READ (Session 4) and SET (Session 6). Pump SET was tuned live: the salt cell
+flow floor is ~1850 RPM, so presets are Night 1100 / Low 2000 / Normal 2750 /
+High 3200. Resting state safe (control interlock OFF, presence ON).
+
+Each remaining session has a self-contained, paste-ready kickoff doc. Order is
+deliberate (read before write, low-stakes before high-stakes); 7 and 8 are
+independent and can swap.
+
+- **Session 7** `SESSION-7-schedule-watch-kickoff.md` — un-gate the view-only
+  pump read from the control interlock, add a timed auto-refresh, watch the
+  panel's stored schedule. Prerequisite for the schedule decision.
+- **Session 8** `SESSION-8-easy-toggles-kickoff.md` — spa light / aux /
+  sprinklers DEVICES-page toggles. Low-stakes; exercises the page-context guard.
+- **Session 9** `SESSION-9-heaters-kickoff.md` — pool + spa heat on/off +
+  setpoint. Value-set machinery already proven; needs a SET_TEMP nav survey and a
+  careful live test. Highest stakes among the control builds.
+- **Session 10** `SESSION-10-schedule-decision-kickoff.md` — deal with the
+  panel's stored schedule, gated on Session 7. Likely solved by HA-as-scheduler
+  (override / guard the salt floor) rather than editing the panel. The dead
+  iAquaLink 2.0 is only a last-resort fallback (conflicts with our 0x33 seat).
+
+Phase 4 (decode the CMD_STATUS LED bitmap into named circuit states) remains the
+optional polish after control is complete.
