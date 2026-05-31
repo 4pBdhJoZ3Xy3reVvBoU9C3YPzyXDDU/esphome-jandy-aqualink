@@ -108,7 +108,7 @@ switch:
     id: iaq_presence
     icon: "mdi:thermometer-lines"
     optimistic: true
-    restore_mode: ALWAYS_OFF
+    restore_mode: RESTORE_DEFAULT_OFF   # was ALWAYS_OFF; temps keep reading after a reboot
     turn_on_action:
       - lambda: "id(jandy_comp).set_iaq_presence(true);"
     turn_off_action:
@@ -173,6 +173,45 @@ button:
     icon: "mdi:weather-windy"
     on_press:
       - lambda: "id(jandy_comp).iaq_press(0x16);"   # home button 5 = Air Blower
+
+  # --- Survey navigation (read-only). Gated by the master interlock + iAqualink
+  # presence. Each sends ONE global page-movement key; none can actuate equipment.
+  # Temporary survey instruments; the useful ones stay, the rest get removed after.
+  - platform: template
+    name: "iAq Nav Home"
+    icon: "mdi:home"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_nav(0x01);"
+  - platform: template
+    name: "iAq Nav Other Devices"
+    icon: "mdi:format-list-bulleted"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_nav(0x18);"   # only honored from the HOME page
+  - platform: template
+    name: "iAq Nav Status"
+    icon: "mdi:gauge"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_nav(0x06);"
+  - platform: template
+    name: "iAq Nav Menu"
+    icon: "mdi:menu"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_nav(0x02);"
+  - platform: template
+    name: "iAq Nav Back"
+    icon: "mdi:arrow-left"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_nav(0x05);"
+  - platform: template
+    name: "iAq Nav Next Page"
+    icon: "mdi:chevron-right"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_nav(0x21);"
+  - platform: template
+    name: "iAq Nav Prev Page"
+    icon: "mdi:chevron-left"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_nav(0x20);"
 
 # Diagnostics (unchanged from the bridge build).
 sensor:
