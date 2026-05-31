@@ -235,6 +235,44 @@ const char *iaq_page_name(uint8_t p) {
   }
 }
 
+uint16_t rpm_check(uint16_t rpm) {
+  if (rpm < 600) rpm = 600;
+  if (rpm > 3450) rpm = 3450;
+  return static_cast<uint16_t>(((rpm + 2) / 5) * 5);
+}
+
+void num2iaqt_rpm(uint16_t rpm, uint8_t out[5]) {
+  // Decimal ASCII digits, left-justified, NUL-padded to width 5.
+  char tmp[6];
+  int n = 0;
+  if (rpm == 0) {
+    tmp[n++] = '0';
+  } else {
+    while (rpm > 0 && n < 5) { tmp[n++] = static_cast<char>('0' + (rpm % 10)); rpm /= 10; }
+  }
+  for (int i = 0; i < 5; ++i) out[i] = 0x00;
+  for (int i = 0; i < n; ++i) out[i] = static_cast<uint8_t>(tmp[n - 1 - i]);
+}
+
+size_t build_vsp_set_frame(uint16_t rpm, uint8_t *out, size_t out_cap) {
+  if (out_cap < 24) return 0;
+  uint16_t safe = rpm_check(rpm);
+  uint8_t field[5];
+  num2iaqt_rpm(safe, field);
+  size_t i = 0;
+  out[i++] = DLE; out[i++] = STX; out[i++] = 0x00; out[i++] = 0x24; out[i++] = 0x31;
+  for (int k = 0; k < 5; ++k) out[i++] = field[k];
+  for (int k = 0; k < 11; ++k) out[i++] = 0xcd;
+  uint32_t s = 0;
+  for (size_t k = 0; k < i; ++k) s += out[k];  // sum from leading DLE through last 0xcd
+  out[i++] = static_cast<uint8_t>(s & 0xFF);
+  out[i++] = DLE;
+  out[i++] = ETX;
+  return i;  // 24
+}
+
+bool vsp_adjust_allowed(uint8_t current_page) { return current_page == IAQ_PAGE_DEVICES; }
+
 // --- self-test over the same vectors the Python suite uses ---
 
 bool selftest(std::string &detail) {
@@ -347,6 +385,41 @@ bool selftest(std::string &detail) {
     for (uint8_t k : nav_no)
       if (is_iaq_nav_key(k)) pass = false;
     if (pass) ok++;
+  }
+
+  // Pump-set: build_vsp_set_frame reproduces the captured 0x24 frames; the
+  // control-request ack and the DEVICES page gate are correct. Same oracle as
+  // tests/test_pump_set.py.
+  {
+    struct VV { uint16_t rpm; uint8_t exp[24]; };
+    static const VV vv[] = {
+        {1600, {0x10,0x02,0x00,0x24,0x31,0x31,0x36,0x30,0x30,0x00,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xfd,0x10,0x03}},
+        {600,  {0x10,0x02,0x00,0x24,0x31,0x36,0x30,0x30,0x00,0x00,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcc,0x10,0x03}},
+    };
+    for (const auto &v : vv) {
+      total++;
+      uint8_t out[32];
+      size_t n = build_vsp_set_frame(v.rpm, out, sizeof(out));
+      bool pass = (n == 24);
+      for (int i = 0; pass && i < 24; ++i)
+        if (out[i] != v.exp[i]) pass = false;
+      if (pass) ok++;
+      else { detail += (v.rpm == 600 ? " VSP600" : " VSP1600"); }
+    }
+    total++;
+    uint8_t cr[9];
+    build_ack(ACK_IAQ_TOUCH, 0x80, cr);
+    const uint8_t cr_exp[9] = {0x10, 0x02, 0x00, 0x01, 0x00, 0x80, 0x93, 0x10, 0x03};
+    bool crp = true;
+    for (int i = 0; i < 9; ++i)
+      if (cr[i] != cr_exp[i]) crp = false;
+    if (crp) ok++;
+    else { detail += " CTRLREQ"; }
+    total++;
+    if (vsp_adjust_allowed(IAQ_PAGE_DEVICES) && !vsp_adjust_allowed(IAQ_PAGE_HOME) &&
+        !vsp_adjust_allowed(IAQ_PAGE_SET_VSP))
+      ok++;
+    else { detail += " VSPGATE"; }
   }
 
   // iAqualink HOME-page decode: spa=88, air=156 from real captured frames.

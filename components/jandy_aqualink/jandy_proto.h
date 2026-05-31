@@ -32,6 +32,18 @@ static constexpr uint8_t ACK_ALLB_SIM = 0x80;   // AllButton keypad simulator ac
 static constexpr uint8_t ACK_IAQ_TOUCH = 0x00;  // iAqualink (Aqualink Touch) ack
 static constexpr uint8_t IAQ_DEV_ID = 0x33;     // iAqualink device address
 static constexpr uint8_t CMD_IAQ_PAGE_MSG = 0x25;  // iAqualink display page line
+static constexpr uint8_t CMD_IAQ_CTRL_READY = 0x31;  // panel grants the value-set control slot
+
+// iAqualink page types (mirror of jandy/frames.py) used to gate the pump-set
+// sequence by the page the panel is currently showing.
+static constexpr uint8_t IAQ_PAGE_HOME = 0x01;
+static constexpr uint8_t IAQ_PAGE_SET_VSP = 0x1E;
+static constexpr uint8_t IAQ_PAGE_STATUS2 = 0x2A;
+static constexpr uint8_t IAQ_PAGE_DEVICES = 0x36;
+
+// VSP-adjust keycode on the DEVICES page. Same byte as the home Pool Heat key;
+// page-scoped, named separately so it is never confused with a heater press.
+static constexpr uint8_t KEY_IAQ_DEVICES_VSP_ADJ = 0x13;
 
 // Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
 // the menu/display and never actuate equipment, so they are the ONLY keys this
@@ -65,6 +77,12 @@ inline void build_ack(uint8_t ack_type, uint8_t key, uint8_t out[9]) {
 
 // AllButton ACK carrying `key`. key=0x00 yields ACK_PRESENCE exactly.
 inline void build_key_ack(uint8_t key, uint8_t out[9]) { build_ack(ACK_ALLB_SIM, key, out); }
+
+// Pump speed SET helpers (mirror of jandy/frames.py).
+uint16_t rpm_check(uint16_t rpm);                 // clamp 600-3450, snap to 5
+void num2iaqt_rpm(uint16_t rpm, uint8_t out[5]);  // ASCII digits, NUL-padded to 5
+size_t build_vsp_set_frame(uint16_t rpm, uint8_t *out, size_t out_cap);  // 0x24 frame; returns 24
+bool vsp_adjust_allowed(uint8_t current_page);    // true only on DEVICES (0x36)
 
 // iAqualink Touch presence ACK (inert): 10 02 00 01 00 00 13 10 03. Replying with
 // this to every frame the panel sends the iAqualink device (0x33) makes the panel
