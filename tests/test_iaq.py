@@ -81,6 +81,24 @@ class TestIaqHomePage(unittest.TestCase):
         # Page not ended yet; nothing committed.
         self.assertFalse(r.has_spa)
 
+    def test_water_mode_tracks_the_current_home_page_label(self):
+        # The "Switch to Pool Mode" control is gated on this: it must only fire
+        # while the panel is actually in spa mode (index-4 label is "Spa Temp").
+        r = IaqReader()
+        feed_frames(
+            r, IAQ_PAGE_START_HOME, IAQ_MSG_I1_156, IAQ_MSG_I5_AIR, IAQ_MSG_I4_SPA, IAQ_MSG_I0_88,
+            IAQ_PAGE_END,
+        )
+        self.assertEqual(r.water_mode, 3)  # 3 = spa
+        feed_frames(
+            r, IAQ_PAGE_START_HOME, IAQ_MSG_I1_156, IAQ_MSG_I5_AIR, IAQ_MSG_I4_POOL, IAQ_MSG_I0_90,
+            IAQ_PAGE_END,
+        )
+        self.assertEqual(r.water_mode, 2)  # 2 = pool
+
+    def test_water_mode_starts_unknown(self):
+        self.assertEqual(IaqReader().water_mode, 0)
+
     def test_non_home_page_does_not_set_temps(self):
         r = IaqReader()
         # Page type 0x36 = DEVICES, not HOME.

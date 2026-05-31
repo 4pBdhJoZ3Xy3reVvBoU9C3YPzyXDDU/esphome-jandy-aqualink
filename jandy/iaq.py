@@ -65,6 +65,7 @@ class IaqReader:
         self.has_air = False
         self.has_pool = False
         self.has_spa = False
+        self.water_mode = 0  # current home-page water label: 0 none, 2 pool, 3 spa
         self._page_type = 0
         self._lines = {}  # index -> text
 
@@ -103,6 +104,8 @@ class IaqReader:
             elif label in ("POOL TEMP", "WATER TEMP"):
                 self.pool = val
                 self.has_pool = True
+                self.water_mode = 2
             elif label == "SPA TEMP":
                 self.spa = val
                 self.has_spa = True
+                self.water_mode = 3

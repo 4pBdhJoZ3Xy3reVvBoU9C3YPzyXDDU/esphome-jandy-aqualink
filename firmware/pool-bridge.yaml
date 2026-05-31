@@ -141,6 +141,16 @@ button:
     on_press:
       - lambda: "id(jandy_comp).arm_key(0x0E);"   # KEY_CANCEL
 
+  # iAqualink control: switch the panel from spa mode to pool mode by pressing
+  # the Spa toggle (0x12). Gated: needs the interlock on, iAqualink presence on,
+  # and the panel currently in spa mode. Sends only 0x12, so it cannot reach Spa
+  # Drain or Spa Fill. Reversible (press Spa again to go back).
+  - platform: template
+    name: "Switch to Pool Mode"
+    icon: "mdi:pool"
+    on_press:
+      - lambda: "id(jandy_comp).request_pool_mode();"
+
 # Diagnostics (unchanged from the bridge build).
 sensor:
   - platform: wifi_signal

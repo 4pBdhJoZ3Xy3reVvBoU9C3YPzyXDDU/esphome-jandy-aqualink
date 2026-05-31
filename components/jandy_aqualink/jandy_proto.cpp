@@ -178,9 +178,11 @@ void IaqReader::commit_home() {
     } else if (lk == 2) {
       state.pool = val;
       state.has_pool = true;
+      water_mode_ = 2;
     } else if (lk == 3) {
       state.spa = val;
       state.has_spa = true;
+      water_mode_ = 3;
     }
   }
 }
@@ -303,7 +305,7 @@ bool selftest(std::string &detail) {
     feed_one({0x10, 0x02, 0x33, 0x25, 0x00, 0x38, 0x38, 0xC2, 0xBA, 0x00, 0x56, 0x10, 0x03});
     feed_one({0x10, 0x02, 0x33, 0x28, 0x05, 0x1F, 0x1A, 0x08, 0x1D, 0xD0, 0x10, 0x03});
     if (ir.state.has_spa && ir.state.spa == 88 && ir.state.has_air && ir.state.air == 156 &&
-        !ir.state.has_pool)
+        !ir.state.has_pool && ir.water_mode() == 3)
       ok++;
   }
 

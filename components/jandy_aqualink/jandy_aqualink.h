@@ -49,6 +49,13 @@ class JandyAqualink : public Component {
   void set_iaq_presence(bool on);
   bool iaq_presence() const { return iaq_presence_; }
 
+  // Switch the panel to Pool Mode by pressing the iAqualink Spa toggle (keycode
+  // 0x12, the home-page Spa button). Heavily gated: requires the master
+  // interlock on, iAqualink presence on, and the panel currently in spa mode.
+  // Sends exactly that one keycode, never anything else, so it cannot reach Spa
+  // Drain/Fill. Idempotent: refuses if not currently in spa mode.
+  void request_pool_mode();
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
@@ -95,6 +102,12 @@ class JandyAqualink : public Component {
   jandy::IaqReader iaq_reader_;
   volatile int t_air_{-999}, t_pool_{-999}, t_spa_{-999};
   int pub_air_{-1000}, pub_pool_{-1000}, pub_spa_{-1000};
+
+  // iAqualink one-shot keypress: -1 none, else the keycode to send in the next
+  // ACK to 0x33. iaq_water_mode_ mirrors the decoder's current mode to core 0.
+  volatile int16_t iaq_armed_key_{-1};
+  volatile int iaq_water_mode_{0};
+  volatile uint32_t iaq_keys_sent_{0};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records

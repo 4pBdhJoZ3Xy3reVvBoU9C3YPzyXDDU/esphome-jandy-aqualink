@@ -98,18 +98,37 @@ void JandyAqualink::task_loop() {
         }
         observe_frame(f);  // after the reply, never delays it
       } else if (iaq_presence_ && f.dest() == iaq_addr_) {
-        // iAqualink read: the panel sends the iAqualink slot one frame at a time
-        // and waits for an ACK before the next, so we must reply in-slot to every
-        // 0x33 frame. The ACK is inert (no key) -> read-only, no actuation.
+        // iAqualink: the panel sends its slot one frame at a time and waits for
+        // an ACK before the next, so we reply in-slot to every 0x33 frame. The
+        // ACK is inert (read-only) unless a key is armed AND this is the poll
+        // (0x30) frame, which is the idle moment between pages (mirrors
+        // AqualinkD's cansend). Consume the armed key atomically.
+        const uint8_t *ack = jandy::ACK_IAQ_PRESENCE;
+        uint8_t keyack[jandy::ACK_PRESENCE_LEN];
+        int sent_key = -1;
+        portENTER_CRITICAL(&mux_);
+        if (iaq_armed_key_ >= 0 && f.cmd() == 0x30) {
+          sent_key = iaq_armed_key_;
+          iaq_armed_key_ = -1;
+        }
+        portEXIT_CRITICAL(&mux_);
+        if (sent_key >= 0) {
+          jandy::build_ack(jandy::ACK_IAQ_TOUCH, static_cast<uint8_t>(sent_key), keyack);
+          ack = keyack;
+        }
         int64_t t0 = esp_timer_get_time();
-        uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(jandy::ACK_IAQ_PRESENCE),
-                         jandy::ACK_PRESENCE_LEN);
+        uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(ack), jandy::ACK_PRESENCE_LEN);
         uint32_t dt = static_cast<uint32_t>(esp_timer_get_time() - t0);
         portENTER_CRITICAL(&mux_);
         frames_++;
         iaq_acks_++;
         last_reply_us_ = dt;
+        if (sent_key >= 0) iaq_keys_sent_++;
         portEXIT_CRITICAL(&mux_);
+        if (sent_key >= 0) {
+          ESP_LOGW(TAG, "SENT IAQ KEY 0x%02X in ACK %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                   sent_key, ack[0], ack[1], ack[2], ack[3], ack[4], ack[5], ack[6], ack[7], ack[8]);
+        }
         log_iaq_frame(f);  // after the reply, never delays it
         iaq_reader_.feed(f);
         const auto &ts = iaq_reader_.state;
@@ -117,6 +136,7 @@ void JandyAqualink::task_loop() {
         if (ts.has_air) t_air_ = ts.air;
         if (ts.has_pool) t_pool_ = ts.pool;
         if (ts.has_spa) t_spa_ = ts.spa;
+        iaq_water_mode_ = iaq_reader_.water_mode();
         portEXIT_CRITICAL(&mux_);
       } else {
         portENTER_CRITICAL(&mux_);
@@ -165,6 +185,29 @@ void JandyAqualink::set_iaq_presence(bool on) {
   iaq_presence_ = on;
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "iAqualink presence %s (emulating 0x%02X, read-only)", on ? "ON" : "OFF", iaq_addr_);
+}
+
+void JandyAqualink::request_pool_mode() {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "pool-mode REFUSED: safety interlock is OFF");
+    return;
+  }
+  if (!iaq_presence_) {
+    ESP_LOGW(TAG, "pool-mode REFUSED: iAqualink presence is OFF");
+    return;
+  }
+  int wm;
+  portENTER_CRITICAL(&mux_);
+  wm = iaq_water_mode_;
+  portEXIT_CRITICAL(&mux_);
+  if (wm != 3) {  // 3 = spa mode; only act when currently in spa mode
+    ESP_LOGW(TAG, "pool-mode REFUSED: panel is not in spa mode (water_mode=%d)", wm);
+    return;
+  }
+  portENTER_CRITICAL(&mux_);
+  iaq_armed_key_ = 0x12;  // Spa toggle (home button index 1) -> spa off -> Pool Mode
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "ARMED Spa toggle (0x12) -> Pool Mode on next iAqualink poll (one press)");
 }
 
 // Log iAqualink frames the panel sends our 0x33 slot, skipping the bare poll

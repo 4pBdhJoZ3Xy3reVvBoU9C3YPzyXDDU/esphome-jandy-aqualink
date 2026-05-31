@@ -128,12 +128,16 @@ class IaqReader {
  public:
   void feed(const Frame &f);
   Decoded state;
+  // Current home-page water label: 0 none, 2 pool, 3 spa. Used to gate the
+  // pool-mode control so it only fires while the panel is actually in spa mode.
+  int water_mode() const { return water_mode_; }
 
  private:
   void commit_home();
   static constexpr int MAX_LINES = 20;
   static constexpr int LINE_LEN = 20;
   uint8_t page_type_ = 0;
+  int water_mode_ = 0;
   bool present_[MAX_LINES] = {false};
   char lines_[MAX_LINES][LINE_LEN]{};
 };
