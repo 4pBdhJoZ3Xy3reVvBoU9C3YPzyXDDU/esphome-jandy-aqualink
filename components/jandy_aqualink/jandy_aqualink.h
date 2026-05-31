@@ -74,12 +74,20 @@ class JandyAqualink : public Component {
   // temperatures keep updating. Gated by the master interlock + iAqualink presence.
   void read_pump_speed();
 
+  // Set the filter pump speed (RPM) from HA. Gated by the master interlock +
+  // iAqualink presence; the value is clamped to 600-3450 and snapped to 5. Starts
+  // a multi-step, page-confirmed sequence run by the core-1 task. One at a time.
+  void set_pump_rpm(uint16_t rpm);
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
   void observe_frame(const jandy::Frame &f);
   void dump_observations();
   void log_iaq_frame(const jandy::Frame &f);
+  void send_iaq_ack_(uint8_t key);   // core-1: write an iAqualink ack carrying `key`
+  void advance_set_sequence_();      // core-1: drive the pump-set sequence on each poll
+  void send_vsp_set_(uint16_t rpm);  // core-1: transmit the 0x24 value frame
 
   int tx_pin_{19};
   int rx_pin_{22};
@@ -132,6 +140,12 @@ class JandyAqualink : public Component {
   volatile int iaq_water_mode_{0};
   volatile int iaq_current_page_{0};  // mirror of decoder current_page() for core-0 nav gating
   volatile uint32_t iaq_keys_sent_{0};
+
+  // Pump speed SET sequence (multi-step, page-driven). 0 = idle, 1..8 = steps.
+  // iaq_set_rpm_ is the clamped target. Written by set_pump_rpm (core 0) under
+  // mux_ and by the core-1 task as it advances.
+  volatile int iaq_set_step_{0};
+  volatile int iaq_set_rpm_{0};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records

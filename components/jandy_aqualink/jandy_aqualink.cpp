@@ -100,6 +100,31 @@ void JandyAqualink::task_loop() {
         }
         observe_frame(f);  // after the reply, never delays it
       } else if (iaq_presence_ && f.dest() == iaq_addr_) {
+        // The pump-set sequence owns the iAq reply while active.
+        int set_step;
+        portENTER_CRITICAL(&mux_);
+        set_step = iaq_set_step_;
+        portEXIT_CRITICAL(&mux_);
+        if (set_step != 0) {
+          if (f.cmd() == jandy::CMD_IAQ_CTRL_READY && set_step == 5) {
+            send_vsp_set_(static_cast<uint16_t>(iaq_set_rpm_));
+            portENTER_CRITICAL(&mux_);
+            iaq_set_step_ = 6;
+            portEXIT_CRITICAL(&mux_);
+          } else if (f.cmd() == 0x30) {
+            advance_set_sequence_();  // sends one ack (nav key / 0x80 / inert), advances
+          } else {
+            send_iaq_ack_(0x00);  // page frames during the sequence: stay inert
+          }
+          iaq_reader_.feed(f);
+          portENTER_CRITICAL(&mux_);
+          iaq_current_page_ = iaq_reader_.current_page();
+          if (iaq_reader_.state.has_rpm) iaq_rpm_ = iaq_reader_.state.rpm;
+          if (iaq_reader_.state.has_watts) iaq_watts_ = iaq_reader_.state.watts;
+          frames_++;
+          portEXIT_CRITICAL(&mux_);
+          continue;  // this 0x33 frame fully handled by the set sequence
+        }
         // iAqualink: the panel sends its slot one frame at a time and waits for
         // an ACK before the next, so we reply in-slot to every 0x33 frame. The
         // ACK is inert (read-only) unless a key is armed AND this is the poll
@@ -165,7 +190,12 @@ void JandyAqualink::task_loop() {
 void JandyAqualink::set_interlock(bool on) {
   portENTER_CRITICAL(&mux_);
   interlock_ = on;
-  if (!on) armed_key_ = -1;  // hard abort: clear any armed key, revert to inert
+  if (!on) {
+    armed_key_ = -1;       // hard abort: clear any armed key, revert to inert
+    iaq_armed_key_ = -1;
+    iaq_set_step_ = 0;     // also abort any in-progress pump-set sequence
+    iaq_return_home_ = false;
+  }
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "safety interlock %s%s", on ? "ON" : "OFF", on ? "" : " (armed key cleared)");
 }
@@ -261,6 +291,116 @@ void JandyAqualink::read_pump_speed() {
   iaq_armed_key_ = jandy::KEY_IAQT_STATUS;  // 0x06
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "read pump speed: viewing STATUS page, will return to HOME");
+}
+
+void JandyAqualink::set_pump_rpm(uint16_t rpm) {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "set_pump_rpm REFUSED: safety interlock is OFF (rpm=%u)", rpm);
+    return;
+  }
+  if (!iaq_presence_) {
+    ESP_LOGW(TAG, "set_pump_rpm REFUSED: iAqualink presence is OFF (rpm=%u)", rpm);
+    return;
+  }
+  uint16_t clamped = jandy::rpm_check(rpm);
+  portENTER_CRITICAL(&mux_);
+  iaq_set_rpm_ = clamped;
+  iaq_set_step_ = 1;  // kick off the sequence on the next poll
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "set_pump_rpm: start sequence -> %u RPM (requested %u)", clamped, rpm);
+}
+
+// core-1: write a 9-byte iAqualink ACK carrying `key` (0x00 = inert presence).
+void JandyAqualink::send_iaq_ack_(uint8_t key) {
+  uint8_t ack[jandy::ACK_PRESENCE_LEN];
+  jandy::build_ack(jandy::ACK_IAQ_TOUCH, key, ack);
+  uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(ack), jandy::ACK_PRESENCE_LEN);
+}
+
+// core-1: transmit the 0x24 value frame on the bus.
+void JandyAqualink::send_vsp_set_(uint16_t rpm) {
+  uint8_t out[32];
+  size_t n = jandy::build_vsp_set_frame(rpm, out, sizeof(out));
+  uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(out), n);
+  ESP_LOGW(TAG, "VSP value frame sent: %u RPM (%u bytes)", rpm, static_cast<unsigned>(n));
+}
+
+// core-1: advance one step of the gated pump-set sequence. Called from the iAq
+// branch of task_loop on each poll (cmd 0x30) while iaq_set_step_ != 0. Each
+// step sends exactly one reply (a nav key, the 0x80 control request, or inert
+// presence) and advances based on the page the decoder reports. The 0x24 value
+// frame itself goes out on the panel's 0x31, handled in task_loop. Turning the
+// interlock off mid-sequence aborts. SAFETY: the 0x13 VSP-adjust key is sent
+// only when vsp_adjust_allowed(page) is true (page == DEVICES), because 0x13 is
+// Pool Heat on the HOME page.
+void JandyAqualink::advance_set_sequence_() {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "set sequence aborted at step %d: interlock OFF", iaq_set_step_);
+    iaq_set_step_ = 0;
+    send_iaq_ack_(0x00);
+    return;
+  }
+  int page = iaq_reader_.current_page();
+  switch (iaq_set_step_) {
+    case 1:  // go HOME first (deterministic starting point)
+      send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      iaq_set_step_ = 2;
+      break;
+    case 2:  // on HOME -> open Other Devices; else retry HOME
+      if (page == jandy::IAQ_PAGE_HOME) {
+        send_iaq_ack_(jandy::KEY_IAQT_OTHER_DEVICES);
+        iaq_set_step_ = 3;
+      } else {
+        send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      }
+      break;
+    case 3:  // on DEVICES -> press VSP adjust (0x13). SAFETY: only on DEVICES
+      if (jandy::vsp_adjust_allowed(static_cast<uint8_t>(page))) {
+        send_iaq_ack_(jandy::KEY_IAQ_DEVICES_VSP_ADJ);
+        iaq_set_step_ = 4;
+      } else if (page == jandy::IAQ_PAGE_HOME) {
+        send_iaq_ack_(jandy::KEY_IAQT_OTHER_DEVICES);  // not there yet, retry nav
+      } else {
+        send_iaq_ack_(0x00);  // wait for the panel to land on DEVICES
+      }
+      break;
+    case 4:  // on SET_VSP -> request the control slot (key 0x80)
+      if (page == jandy::IAQ_PAGE_SET_VSP) {
+        send_iaq_ack_(0x80);
+        iaq_set_step_ = 5;
+      } else {
+        send_iaq_ack_(0x00);
+      }
+      break;
+    case 5:  // waiting for the panel's 0x31; the 0x24 goes out there, not on a poll
+      send_iaq_ack_(0x00);
+      break;
+    case 6:  // value sent -> read it back via STATUS
+      send_iaq_ack_(jandy::KEY_IAQT_STATUS);
+      iaq_set_step_ = 7;
+      break;
+    case 7:  // on STATUS page (rpm captured by the decoder) -> return HOME
+      if (page == jandy::IAQ_PAGE_STATUS2 || page == 0x5B) {
+        send_iaq_ack_(jandy::KEY_IAQT_HOME);
+        iaq_set_step_ = 8;
+      } else {
+        send_iaq_ack_(0x00);
+      }
+      break;
+    case 8:  // on HOME -> done
+      if (page == jandy::IAQ_PAGE_HOME) {
+        ESP_LOGW(TAG, "set_pump_rpm sequence complete (%d RPM)", iaq_set_rpm_);
+        iaq_set_step_ = 0;
+        send_iaq_ack_(0x00);
+      } else {
+        send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      }
+      break;
+    default:
+      iaq_set_step_ = 0;
+      send_iaq_ack_(0x00);
+      break;
+  }
 }
 
 void JandyAqualink::request_pool_mode() {

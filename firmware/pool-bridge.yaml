@@ -228,6 +228,47 @@ button:
     on_press:
       - lambda: "id(jandy_comp).read_pump_speed();"
 
+  # --- Pump speed presets (gated by interlock + iAqualink presence). Each starts
+  # the page-confirmed value-set sequence, then reads the new RPM back. The two
+  # low values are tuned at the pad against the salt cell flow cutoff. ---
+  - platform: template
+    name: "Pump Speed: Night"
+    icon: "mdi:weather-night"
+    on_press:
+      - lambda: "id(jandy_comp).set_pump_rpm(1100);"   # below the salt cutoff; tuned at the pad
+  - platform: template
+    name: "Pump Speed: Low"
+    icon: "mdi:speedometer-slow"
+    on_press:
+      - lambda: "id(jandy_comp).set_pump_rpm(1600);"   # efficient, still chlorinating; tuned at the pad
+  - platform: template
+    name: "Pump Speed: Normal"
+    icon: "mdi:speedometer-medium"
+    on_press:
+      - lambda: "id(jandy_comp).set_pump_rpm(2750);"
+  - platform: template
+    name: "Pump Speed: High"
+    icon: "mdi:speedometer"
+    on_press:
+      - lambda: "id(jandy_comp).set_pump_rpm(3200);"
+
+# Pump speed slider. Inert unless the interlock is armed (set_pump_rpm refuses
+# otherwise), same as the buttons. Snaps to 5 RPM; the component re-clamps to
+# 600-3450 regardless.
+number:
+  - platform: template
+    name: "Pump Speed Set"
+    id: pump_speed_set
+    icon: "mdi:speedometer"
+    unit_of_measurement: "RPM"
+    min_value: 600
+    max_value: 3450
+    step: 5
+    mode: slider
+    optimistic: true
+    set_action:
+      - lambda: "id(jandy_comp).set_pump_rpm((uint16_t) x);"
+
 # Diagnostics (unchanged from the bridge build).
 sensor:
   - platform: wifi_signal

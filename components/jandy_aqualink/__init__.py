@@ -8,7 +8,7 @@ from esphome.const import (
     STATE_CLASS_TOTAL_INCREASING,
 )
 
-AUTO_LOAD = ["sensor"]
+AUTO_LOAD = ["sensor", "number"]
 
 jandy_ns = cg.esphome_ns.namespace("jandy_aqualink")
 JandyAqualink = jandy_ns.class_("JandyAqualink", cg.Component)
