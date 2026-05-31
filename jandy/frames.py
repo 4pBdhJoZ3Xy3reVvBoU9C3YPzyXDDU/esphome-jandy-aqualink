@@ -117,7 +117,26 @@ class FrameExtractor:
 # push display text. ACK shape: 10 02 00 01 80 <key> <cksum> 10 03, where cmd
 # 0x01 = CMD_ACK and ack_type 0x80 = ACK_ALLB_SIM (Jandy's AllButton simulator
 # ack). Checksum is the usual sum over the logical frame up to the checksum.
-ACK_ALLB_SIM = 0x80
+ACK_ALLB_SIM = 0x80   # AllButton keypad simulator ack type
+ACK_IAQ_TOUCH = 0x00  # iAqualink (Aqualink Touch) device ack type
+
+
+def build_ack(ack_type: int, key: int) -> bytes:
+    """Build a 9-byte ACK: 10 02 00 01 <ack_type> <key> <cksum> 10 03.
+
+    cmd 0x01 = CMD_ACK. ack_type selects the emulated device family
+    (ACK_ALLB_SIM 0x80 for AllButton, ACK_IAQ_TOUCH 0x00 for iAqualink). key is
+    the pending button (0x00 = none). The result is checksum-valid.
+    """
+    body = bytes([DLE, STX, 0x00, 0x01, ack_type & 0xFF, key & 0xFF])
+    cksum = sum(body) & 0xFF
+    return body + bytes([cksum, DLE, ETX])
+
+
+# iAqualink Touch presence ACK (inert: ack_type 0x00, no key). Sending this in
+# reply to every frame the panel addresses to the iAqualink device (0x33) makes
+# the panel run its startup and push display pages, which carry the temperatures.
+ACK_IAQ_PRESENCE = build_ack(ACK_IAQ_TOUCH, 0x00)  # 10 02 00 01 00 00 13 10 03
 
 # Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
 # the menu/display and never actuate equipment, so they are the only keys this
@@ -145,6 +164,4 @@ def build_key_ack(key: int) -> bytes:
     self-consistent (checksum-valid) frame. For the allowlisted nav keys it
     contains no 0x10, so it can be written to the bus without byte-stuffing.
     """
-    body = bytes([DLE, STX, 0x00, 0x01, ACK_ALLB_SIM, key & 0xFF])
-    cksum = sum(body) & 0xFF
-    return body + bytes([cksum, DLE, ETX])
+    return build_ack(ACK_ALLB_SIM, key)

@@ -92,6 +92,20 @@ switch:
     turn_off_action:
       - lambda: "id(jandy_comp).set_interlock(false);"
 
+  # Read-only: when on, also emulate the iAqualink controller (0x33) so the panel
+  # pushes its display pages (which carry the temperatures). Sends only inert
+  # ACKs, never a key, so it cannot actuate equipment. Off by default.
+  - platform: template
+    name: "iAqualink Presence"
+    id: iaq_presence
+    icon: "mdi:thermometer-lines"
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - lambda: "id(jandy_comp).set_iaq_presence(true);"
+    turn_off_action:
+      - lambda: "id(jandy_comp).set_iaq_presence(false);"
+
 button:
   - platform: template
     name: "Pool Keypad Press MENU"

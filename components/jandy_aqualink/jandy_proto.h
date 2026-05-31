@@ -28,7 +28,10 @@ static constexpr size_t ACK_PRESENCE_LEN = 9;
 // The pending-key byte (index 5) in our ACK is the button press: 0x00 = inert
 // presence, a keycode = a press, which makes the panel redraw and push display
 // text. ack_type 0x80 = ACK_ALLB_SIM (Jandy's AllButton simulator ack).
-static constexpr uint8_t ACK_ALLB_SIM = 0x80;
+static constexpr uint8_t ACK_ALLB_SIM = 0x80;   // AllButton keypad simulator ack
+static constexpr uint8_t ACK_IAQ_TOUCH = 0x00;  // iAqualink (Aqualink Touch) ack
+static constexpr uint8_t IAQ_DEV_ID = 0x33;     // iAqualink device address
+static constexpr uint8_t CMD_IAQ_PAGE_MSG = 0x25;  // iAqualink display page line
 
 // Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
 // the menu/display and never actuate equipment, so they are the ONLY keys this
@@ -43,15 +46,15 @@ inline bool is_safe_nav_key(uint8_t key) {
          key == KEY_ENTER;
 }
 
-// Build the 9-byte AllButton ACK carrying `key` into out[9]. key=0x00 yields
-// ACK_PRESENCE exactly. For the allowlisted nav keys the result contains no
-// 0x10, so it needs no wire byte-stuffing.
-inline void build_key_ack(uint8_t key, uint8_t out[9]) {
+// Build a 9-byte ACK into out[9]: 10 02 00 01 <ack_type> <key> <cksum> 10 03.
+// ack_type selects the emulated device (ACK_ALLB_SIM 0x80 = AllButton,
+// ACK_IAQ_TOUCH 0x00 = iAqualink); key 0x00 = inert presence.
+inline void build_ack(uint8_t ack_type, uint8_t key, uint8_t out[9]) {
   out[0] = DLE;
   out[1] = STX;
   out[2] = 0x00;
   out[3] = CMD_ACK;
-  out[4] = ACK_ALLB_SIM;
+  out[4] = ack_type;
   out[5] = key;
   uint32_t s = 0;
   for (int i = 0; i < 6; ++i) s += out[i];
@@ -59,6 +62,14 @@ inline void build_key_ack(uint8_t key, uint8_t out[9]) {
   out[7] = DLE;
   out[8] = ETX;
 }
+
+// AllButton ACK carrying `key`. key=0x00 yields ACK_PRESENCE exactly.
+inline void build_key_ack(uint8_t key, uint8_t out[9]) { build_ack(ACK_ALLB_SIM, key, out); }
+
+// iAqualink Touch presence ACK (inert): 10 02 00 01 00 00 13 10 03. Replying with
+// this to every frame the panel sends the iAqualink device (0x33) makes the panel
+// push its display pages, which carry the temperatures.
+static const uint8_t ACK_IAQ_PRESENCE[9] = {0x10, 0x02, 0x00, 0x01, 0x00, 0x00, 0x13, 0x10, 0x03};
 
 // An un-stuffed logical frame: 10 02 dest cmd data... cksum 10 03.
 struct Frame {

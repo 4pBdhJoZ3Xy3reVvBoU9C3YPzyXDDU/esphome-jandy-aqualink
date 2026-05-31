@@ -97,6 +97,20 @@ void JandyAqualink::task_loop() {
                    sent_key, ack[0], ack[1], ack[2], ack[3], ack[4], ack[5], ack[6], ack[7], ack[8], dt);
         }
         observe_frame(f);  // after the reply, never delays it
+      } else if (iaq_presence_ && f.dest() == iaq_addr_) {
+        // iAqualink read: the panel sends the iAqualink slot one frame at a time
+        // and waits for an ACK before the next, so we must reply in-slot to every
+        // 0x33 frame. The ACK is inert (no key) -> read-only, no actuation.
+        int64_t t0 = esp_timer_get_time();
+        uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(jandy::ACK_IAQ_PRESENCE),
+                         jandy::ACK_PRESENCE_LEN);
+        uint32_t dt = static_cast<uint32_t>(esp_timer_get_time() - t0);
+        portENTER_CRITICAL(&mux_);
+        frames_++;
+        iaq_acks_++;
+        last_reply_us_ = dt;
+        portEXIT_CRITICAL(&mux_);
+        log_iaq_frame(f);  // after the reply, never delays it
       } else {
         portENTER_CRITICAL(&mux_);
         frames_++;
@@ -137,6 +151,36 @@ void JandyAqualink::arm_key(uint8_t key) {
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "ARMED key 0x%02X -> sends ACK %02X %02X %02X %02X %02X %02X %02X %02X %02X on next poll",
            key, ack[0], ack[1], ack[2], ack[3], ack[4], ack[5], ack[6], ack[7], ack[8]);
+}
+
+void JandyAqualink::set_iaq_presence(bool on) {
+  portENTER_CRITICAL(&mux_);
+  iaq_presence_ = on;
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "iAqualink presence %s (emulating 0x%02X, read-only)", on ? "ON" : "OFF", iaq_addr_);
+}
+
+// Log iAqualink frames the panel sends our 0x33 slot, skipping the bare poll
+// (0x30) and probe (0x00) keepalives. The 0x25 page messages carry the display
+// text (temperatures); the ascii column on the right shows it.
+void JandyAqualink::log_iaq_frame(const jandy::Frame &f) {
+  uint8_t cmd = f.cmd();
+  if (cmd == 0x30 || cmd == 0x00) return;
+  char hex[3 * 40 + 1];
+  char asc[40 + 1];
+  static const char *const H = "0123456789ABCDEF";
+  size_t n = f.raw.size() > 40 ? 40 : f.raw.size();
+  size_t hp = 0;
+  for (size_t i = 0; i < n; ++i) {
+    uint8_t b = f.raw[i];
+    hex[hp++] = H[b >> 4];
+    hex[hp++] = H[b & 0x0F];
+    hex[hp++] = ' ';
+    asc[i] = (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '.';
+  }
+  hex[hp] = '\0';
+  asc[n] = '\0';
+  ESP_LOGI(TAG, "IAQ cmd=0x%02X | %s| %s", cmd, hex, asc);
 }
 
 // Passive observation: feed every frame to the temperature decoder and log a
@@ -203,12 +247,13 @@ void JandyAqualink::dump_observations() {
 }
 
 void JandyAqualink::loop() {
-  uint32_t polls, errors, latency, frames;
+  uint32_t polls, errors, latency, frames, iaq;
   portENTER_CRITICAL(&mux_);
   polls = acks_sent_;
   errors = bad_cksum_;
   latency = last_reply_us_;
   frames = frames_;
+  iaq = iaq_acks_;
   portEXIT_CRITICAL(&mux_);
 
   if (polls_sensor_ && polls != pub_polls_) {
@@ -227,8 +272,8 @@ void JandyAqualink::loop() {
   uint32_t now = millis();
   if (now - last_log_ms_ >= 10000) {
     last_log_ms_ = now;
-    ESP_LOGI(TAG, "frames=%u polls_answered=%u checksum_errors=%u reply_us=%u", frames, polls,
-             errors, latency);
+    ESP_LOGI(TAG, "frames=%u polls_answered=%u iaq_acks=%u checksum_errors=%u reply_us=%u", frames,
+             polls, iaq, errors, latency);
   }
 }
 

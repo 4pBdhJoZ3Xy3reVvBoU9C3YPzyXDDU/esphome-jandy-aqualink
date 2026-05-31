@@ -225,6 +225,14 @@ bool selftest(std::string &detail) {
     const uint8_t eq[] = {0x02, 0x01, 0x12, 0x17, 0x1E, 0x19, 0x05, 0x0A, 0x0F};
     for (uint8_t e : eq)
       if (is_safe_nav_key(e)) pass = false;
+    // iAqualink inert presence ACK: 10 02 00 01 00 00 13 10 03.
+    uint8_t iaq[9];
+    build_ack(ACK_IAQ_TOUCH, 0x00, iaq);
+    const uint8_t iaq_exp[9] = {0x10, 0x02, 0x00, 0x01, 0x00, 0x00, 0x13, 0x10, 0x03};
+    for (int i = 0; i < 9; ++i) {
+      if (iaq[i] != iaq_exp[i]) pass = false;
+      if (iaq[i] != ACK_IAQ_PRESENCE[i]) pass = false;
+    }
     if (pass) ok++;
   }
 

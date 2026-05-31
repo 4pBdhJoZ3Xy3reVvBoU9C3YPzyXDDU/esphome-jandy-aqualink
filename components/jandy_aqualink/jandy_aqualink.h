@@ -39,11 +39,19 @@ class JandyAqualink : public Component {
   void set_interlock(bool on);
   bool interlock() const { return interlock_; }
 
+  // iAqualink read. When enabled, the device also answers every frame the panel
+  // sends the iAqualink slot (0x33) with the inert iAqualink ACK, which makes the
+  // panel push its display pages (carrying the temperatures). Read-only: no keys
+  // are ever sent on this path. Off by default.
+  void set_iaq_presence(bool on);
+  bool iaq_presence() const { return iaq_presence_; }
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
   void observe_frame(const jandy::Frame &f);
   void dump_observations();
+  void log_iaq_frame(const jandy::Frame &f);
 
   int tx_pin_{19};
   int rx_pin_{22};
@@ -70,6 +78,11 @@ class JandyAqualink : public Component {
   volatile bool interlock_{false};
   volatile int16_t armed_key_{-1};
   volatile uint32_t keys_sent_{0};
+
+  // iAqualink read state. iaq_presence_ gates whether we answer 0x33 frames.
+  uint8_t iaq_addr_{jandy::IAQ_DEV_ID};
+  volatile bool iaq_presence_{false};
+  volatile uint32_t iaq_acks_{0};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records

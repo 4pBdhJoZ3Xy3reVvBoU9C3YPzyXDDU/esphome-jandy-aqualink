@@ -15,8 +15,11 @@ import unittest
 
 from jandy.frames import (
     FrameExtractor,
+    build_ack,
     build_key_ack,
     is_safe_nav_key,
+    ACK_IAQ_TOUCH,
+    ACK_ALLB_SIM,
     KEY_MENU,
     KEY_CANCEL,
     KEY_LEFT,
@@ -53,6 +56,24 @@ class TestBuildKeyAck(unittest.TestCase):
         for key in (KEY_MENU, KEY_CANCEL, KEY_LEFT, KEY_RIGHT, KEY_ENTER):
             ack = build_key_ack(key)
             self.assertNotIn(0x10, ack[2:7], f"key 0x{key:02X} produces a 0x10 in payload")
+
+
+class TestBuildAck(unittest.TestCase):
+    def test_iaqualink_inert_presence_ack(self):
+        # iAqualink Touch presence ACK (AqualinkD ACK_IAQ_TOUCH): ack_type 0x00,
+        # no key, checksum 0x13. This is what makes the panel push display pages.
+        self.assertEqual(build_ack(ACK_IAQ_TOUCH, 0x00), fx.h("10 02 00 01 00 00 13 10 03"))
+
+    def test_allbutton_inert_ack_via_build_ack(self):
+        self.assertEqual(build_ack(ACK_ALLB_SIM, 0x00), fx.h("10 02 00 01 80 00 93 10 03"))
+
+    def test_build_key_ack_is_allbutton_build_ack(self):
+        # build_key_ack must be exactly build_ack with the AllButton ack type.
+        self.assertEqual(build_key_ack(KEY_MENU), build_ack(ACK_ALLB_SIM, KEY_MENU))
+
+    def test_ack_constants(self):
+        self.assertEqual(ACK_IAQ_TOUCH, 0x00)
+        self.assertEqual(ACK_ALLB_SIM, 0x80)
 
 
 class TestSafeNavAllowlist(unittest.TestCase):
