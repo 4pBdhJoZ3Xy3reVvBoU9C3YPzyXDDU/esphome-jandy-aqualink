@@ -52,6 +52,7 @@ class JandyAqualink : public Component {
   volatile uint32_t acks_sent_{0};
   volatile uint32_t display_to_us_{0};
   volatile uint32_t bad_cksum_{0};
+  volatile uint32_t ack_echo_{0};  // our own ACK heard back on RX -> TX reaches the bus
   volatile uint32_t last_reply_us_{0};
 
   // loop()-owned, for publish-on-change and periodic logging.

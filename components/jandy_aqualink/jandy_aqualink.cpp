@@ -78,9 +78,11 @@ void JandyAqualink::task_loop() {
 
       reader.feed(f);
       bool disp_to_us = (f.cmd() == jandy::CMD_DISPLAY && f.dest() == keypad_addr_);
+      bool is_ack_echo = (f.dest() == 0x00 && f.cmd() == jandy::CMD_ACK);
       portENTER_CRITICAL(&mux_);
       frames_++;
       if (disp_to_us) display_to_us_++;
+      if (is_ack_echo) ack_echo_++;
       shared_ = reader.state;
       portEXIT_CRITICAL(&mux_);
     }
@@ -89,7 +91,7 @@ void JandyAqualink::task_loop() {
 
 void JandyAqualink::loop() {
   jandy::Decoded s;
-  uint32_t frames, polls, acks, disp, bad, reply_us;
+  uint32_t frames, polls, acks, disp, bad, reply_us, echo;
   portENTER_CRITICAL(&mux_);
   s = shared_;
   frames = frames_;
@@ -98,6 +100,7 @@ void JandyAqualink::loop() {
   disp = display_to_us_;
   bad = bad_cksum_;
   reply_us = last_reply_us_;
+  echo = ack_echo_;
   portEXIT_CRITICAL(&mux_);
 
   if (air_sensor_ && s.has_air && (!last_pub_.has_air || s.air != last_pub_.air)) {
@@ -120,9 +123,9 @@ void JandyAqualink::loop() {
   if (now - last_log_ms_ >= 5000) {
     last_log_ms_ = now;
     ESP_LOGI(TAG,
-             "frames=%u polls_to_us=%u acks=%u display_to_us=%u bad_cksum=%u reply_us=%u | "
+             "frames=%u polls_to_us=%u acks=%u ack_echo=%u display_to_us=%u bad_cksum=%u reply_us=%u | "
              "air=%d(%d) pool=%d(%d) spa=%d(%d)",
-             frames, polls, acks, disp, bad, reply_us, s.air, s.has_air ? 1 : 0, s.pool,
+             frames, polls, acks, echo, disp, bad, reply_us, s.air, s.has_air ? 1 : 0, s.pool,
              s.has_pool ? 1 : 0, s.spa, s.has_spa ? 1 : 0);
   }
 }
