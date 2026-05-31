@@ -228,3 +228,77 @@ def build_key_ack(key: int) -> bytes:
     contains no 0x10, so it can be written to the bus without byte-stuffing.
     """
     return build_ack(ACK_ALLB_SIM, key)
+
+
+# --- Pump speed SET path ----------------------------------------------------
+#
+# Setting the VSP speed is a value-set command, not a keypress. The handshake
+# (driven by the component state machine, confirmed against AqualinkD
+# queue_iaqt_control_command): navigate to DEVICES, press the page-scoped
+# VSP-adjust key (0x13), open SET_VSP, reply with the control-request ack
+# (iaq_ctrl_ready_ack, key 0x80) on a poll, and when the panel sends
+# CMD_IAQ_CTRL_READY (0x31) transmit the 0x24 value frame below.
+
+# iAqualink page types we gate on (mirror of jandy/iaq.py and C++ jandy_proto.h).
+IAQ_PAGE_HOME = 0x01
+IAQ_PAGE_SET_VSP = 0x1E
+IAQ_PAGE_STATUS2 = 0x2A
+IAQ_PAGE_DEVICES = 0x36
+
+# VSP-adjust keycode on the DEVICES page. Same byte as the home-page Pool Heat
+# key (0x13): it means "VSP1 Spd ADJ" ONLY on DEVICES, so it is named separately
+# to keep the page-gated intent explicit and never confused with a heater press.
+KEY_IAQ_DEVICES_VSP_ADJ = 0x13
+
+# The pump's safe speed range (Pentair Intelliflo VS, RPM mode).
+RPM_MIN = 600
+RPM_MAX = 3450
+
+
+def rpm_check(rpm: int) -> int:
+    """Clamp to the pump's safe 600-3450 range and snap to the nearest 5 RPM."""
+    rpm = max(RPM_MIN, min(RPM_MAX, int(rpm)))
+    return ((rpm + 2) // 5) * 5
+
+
+def num2iaqt_rpm(rpm: int) -> bytes:
+    """ASCII digits of `rpm`, NUL-padded to a fixed 5-byte field (AqualinkD
+    num2iaqtRSset, pad4unknownreason=True). Four-digit speeds get one trailing
+    NUL, three-digit speeds get two."""
+    digits = str(int(rpm)).encode("ascii")
+    return digits + b"\x00" * (5 - len(digits))
+
+
+_VSP_SET_CMD = 0x24          # value-set command frame cmd byte
+_VSP_SET_SUBBYTE = 0x31      # literal sub-byte after the cmd
+_VSP_SET_PAD = b"\xcd" * 11  # 0xcd padding out to logical index 18
+
+
+def build_vsp_set_frame(rpm: int) -> bytes:
+    """The 0x24 value frame that sets the VSP speed:
+    10 02 00 24 31 <5-byte digit field> <eleven 0xcd> <cksum> 10 03.
+
+    `rpm` is clamped and snapped first. No trailing NUL before the 0xcd run (the
+    trailing-NUL form is a known VSP-drop footgun). For every valid speed the
+    body contains no 0x10, so the logical frame is also the wire frame (no
+    byte-stuffing needed), like the ACKs. Reproduces the captured frames exactly.
+    """
+    safe = rpm_check(rpm)
+    body = bytes([DLE, STX, 0x00, _VSP_SET_CMD, _VSP_SET_SUBBYTE]) + num2iaqt_rpm(safe) + _VSP_SET_PAD
+    cksum = sum(body) & 0xFF
+    return body + bytes([cksum, DLE, ETX])
+
+
+def iaq_ctrl_ready_ack() -> bytes:
+    """The control-request reply, sent on an ordinary poll to ask the panel for
+    the value-set control slot: an iAqualink ack carrying key 0x80
+    (ACK_CMD_READY_CTRL), i.e. 10 02 00 01 00 80 93 10 03. The panel answers with
+    CMD_IAQ_CTRL_READY (0x31), the cue to transmit build_vsp_set_frame."""
+    return build_ack(ACK_IAQ_TOUCH, 0x80)
+
+
+def vsp_adjust_allowed(current_page: int) -> bool:
+    """True only on the DEVICES page (0x36). The VSP-adjust key (0x13) is Pool
+    Heat on the HOME page, so sending it anywhere else could fire a heater. This
+    is the central safety gate for the pump-set sequence."""
+    return current_page == IAQ_PAGE_DEVICES
