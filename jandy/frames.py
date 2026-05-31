@@ -161,6 +161,46 @@ def is_allowed_iaq_key(key: int) -> bool:
     """True only for the allowlisted iAqualink equipment keys (never a heater)."""
     return key in _ALLOWED_IAQ_KEYS
 
+
+# iAqualink global navigation keys (AqualinkD aq_serial.h KEY_IAQTCH_*). These are
+# page-level keys that move the display and never actuate equipment, on ANY page:
+# HOME 0x01, MENU 0x02, ONETOUCH 0x03, BACK 0x05, STATUS 0x06, PREV_PAGE 0x20,
+# NEXT_PAGE 0x21. NOTE these values are iAqualink-protocol keycodes and are a
+# different namespace from the AllButton KEY_* below (e.g. iAq 0x02 = MENU, while
+# in the AllButton context 0x02 = pump). is_iaq_nav_key is only ever consulted on
+# the iAqualink (0x33) path.
+KEY_IAQT_HOME = 0x01
+KEY_IAQT_MENU = 0x02
+KEY_IAQT_ONETOUCH = 0x03
+KEY_IAQT_BACK = 0x05
+KEY_IAQT_STATUS = 0x06
+KEY_IAQT_PREV_PAGE = 0x20
+KEY_IAQT_NEXT_PAGE = 0x21
+# Other Devices (home button 8). Only meaningful, and only safe, from the HOME
+# page, so it is NOT in the nav set; the caller gates it to the HOME page.
+KEY_IAQT_OTHER_DEVICES = 0x18
+
+_IAQ_NAV_KEYS = frozenset(
+    {
+        KEY_IAQT_HOME,
+        KEY_IAQT_MENU,
+        KEY_IAQT_ONETOUCH,
+        KEY_IAQT_BACK,
+        KEY_IAQT_STATUS,
+        KEY_IAQT_PREV_PAGE,
+        KEY_IAQT_NEXT_PAGE,
+    }
+)
+
+
+def is_iaq_nav_key(key: int) -> bool:
+    """True only for global iAqualink navigation keys (safe on any page).
+
+    Excludes 0x18 (Other Devices), which the caller gates to the HOME page, and
+    every equipment/value keycode.
+    """
+    return key in _IAQ_NAV_KEYS
+
 # Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
 # the menu/display and never actuate equipment, so they are the only keys this
 # build will ever transmit. Equipment keys (pump 0x02, spa 0x01, pool heater

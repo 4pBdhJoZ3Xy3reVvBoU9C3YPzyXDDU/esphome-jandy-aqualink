@@ -290,6 +290,14 @@ bool selftest(std::string &detail) {
       pass = false;
     if (is_allowed_iaq_key(0x13) || is_allowed_iaq_key(0x14) || is_allowed_iaq_key(0x09))
       pass = false;
+    // iAqualink navigation allowlist: the global keys pass; 0x18 (gated to HOME
+    // by the caller) and every equipment/value keycode are refused here.
+    const uint8_t nav_ok[] = {0x01, 0x02, 0x03, 0x05, 0x06, 0x20, 0x21};
+    for (uint8_t k : nav_ok)
+      if (!is_iaq_nav_key(k)) pass = false;
+    const uint8_t nav_no[] = {0x18, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x1D, 0x31};
+    for (uint8_t k : nav_no)
+      if (is_iaq_nav_key(k)) pass = false;
     if (pass) ok++;
   }
 

@@ -84,6 +84,19 @@ inline bool is_allowed_iaq_key(uint8_t key) {
          key == KEY_IAQ_AIR_BLOWER || key == KEY_IAQ_POOL_LIGHT;
 }
 
+// iAqualink global navigation keys (AqualinkD aq_serial.h KEY_IAQTCH_*): page
+// movement only, never equipment, on any page. 0x18 (Other Devices) is NOT here
+// because it is only safe from the HOME page; iaq_nav() gates it separately.
+static constexpr uint8_t KEY_IAQT_HOME = 0x01, KEY_IAQT_MENU = 0x02, KEY_IAQT_ONETOUCH = 0x03,
+                         KEY_IAQT_BACK = 0x05, KEY_IAQT_STATUS = 0x06, KEY_IAQT_PREV_PAGE = 0x20,
+                         KEY_IAQT_NEXT_PAGE = 0x21, KEY_IAQT_OTHER_DEVICES = 0x18;
+
+inline bool is_iaq_nav_key(uint8_t key) {
+  return key == KEY_IAQT_HOME || key == KEY_IAQT_MENU || key == KEY_IAQT_ONETOUCH ||
+         key == KEY_IAQT_BACK || key == KEY_IAQT_STATUS || key == KEY_IAQT_PREV_PAGE ||
+         key == KEY_IAQT_NEXT_PAGE;
+}
+
 // An un-stuffed logical frame: 10 02 dest cmd data... cksum 10 03.
 struct Frame {
   std::vector<uint8_t> raw;
