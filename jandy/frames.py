@@ -138,6 +138,25 @@ def build_ack(ack_type: int, key: int) -> bytes:
 # the panel run its startup and push display pages, which carry the temperatures.
 ACK_IAQ_PRESENCE = build_ack(ACK_IAQ_TOUCH, 0x00)  # 10 02 00 01 00 00 13 10 03
 
+# iAqualink HOME-page equipment keycodes. These are home-button presses (the
+# panel maps home button index N to KEY_IAQTCH_KEY0(N+1)). They are specific to
+# THIS panel's home layout, confirmed from its captured 0x24 button frames:
+# index 0 Filter Pump, 1 Spa (pool/spa valve toggle), 2 Pool Heat, 3 Spa Heat,
+# 6 Pool Light.
+KEY_IAQ_FILTER_PUMP = 0x11  # home button 0
+KEY_IAQ_SPA = 0x12          # home button 1 (toggles spa mode / valves)
+KEY_IAQ_POOL_LIGHT = 0x17   # home button 6
+
+# Allowlist of iAqualink equipment keys this build will transmit. Deliberately
+# EXCLUDES the heater buttons (Pool Heat 0x13, Spa Heat 0x14) and everything
+# else, so a control press can never fire a heater.
+_ALLOWED_IAQ_KEYS = frozenset({KEY_IAQ_FILTER_PUMP, KEY_IAQ_SPA, KEY_IAQ_POOL_LIGHT})
+
+
+def is_allowed_iaq_key(key: int) -> bool:
+    """True only for the allowlisted iAqualink equipment keys (never a heater)."""
+    return key in _ALLOWED_IAQ_KEYS
+
 # Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
 # the menu/display and never actuate equipment, so they are the only keys this
 # build will ever transmit. Equipment keys (pump 0x02, spa 0x01, pool heater

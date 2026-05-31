@@ -76,6 +76,28 @@ class TestBuildAck(unittest.TestCase):
         self.assertEqual(ACK_ALLB_SIM, 0x80)
 
 
+class TestIaqEquipmentAllowlist(unittest.TestCase):
+    def test_allowed_iaq_equipment_keys(self):
+        from jandy.frames import (
+            is_allowed_iaq_key,
+            KEY_IAQ_FILTER_PUMP,
+            KEY_IAQ_SPA,
+            KEY_IAQ_POOL_LIGHT,
+        )
+
+        for k in (KEY_IAQ_FILTER_PUMP, KEY_IAQ_SPA, KEY_IAQ_POOL_LIGHT):
+            self.assertTrue(is_allowed_iaq_key(k), f"0x{k:02X} should be allowed")
+        self.assertEqual((KEY_IAQ_FILTER_PUMP, KEY_IAQ_SPA, KEY_IAQ_POOL_LIGHT), (0x11, 0x12, 0x17))
+
+    def test_iaq_heater_and_other_keys_refused(self):
+        from jandy.frames import is_allowed_iaq_key
+
+        # 0x13 = Pool Heat, 0x14 = Spa Heat (home buttons 2,3) MUST be refused,
+        # plus any other code.
+        for k in (0x13, 0x14, 0x15, 0x16, 0x18, 0x00, 0x09, 0x1D):
+            self.assertFalse(is_allowed_iaq_key(k), f"0x{k:02X} must not be allowed")
+
+
 class TestSafeNavAllowlist(unittest.TestCase):
     def test_navigation_keys_are_allowed(self):
         for key in (KEY_MENU, KEY_CANCEL, KEY_LEFT, KEY_RIGHT, KEY_ENTER):

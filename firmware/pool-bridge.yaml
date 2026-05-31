@@ -151,6 +151,19 @@ button:
     on_press:
       - lambda: "id(jandy_comp).request_pool_mode();"
 
+  # iAqualink equipment toggles (gated by interlock + iAqualink presence + the
+  # allowlist). The heater buttons are deliberately not exposed.
+  - platform: template
+    name: "Filter Pump"
+    icon: "mdi:pump"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_press(0x11);"   # home button 0 = Filter Pump
+  - platform: template
+    name: "Pool Light"
+    icon: "mdi:lightbulb"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_press(0x17);"   # home button 6 = Pool Light
+
 # Diagnostics (unchanged from the bridge build).
 sensor:
   - platform: wifi_signal

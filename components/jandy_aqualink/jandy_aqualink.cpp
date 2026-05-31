@@ -187,15 +187,26 @@ void JandyAqualink::set_iaq_presence(bool on) {
   ESP_LOGW(TAG, "iAqualink presence %s (emulating 0x%02X, read-only)", on ? "ON" : "OFF", iaq_addr_);
 }
 
-void JandyAqualink::request_pool_mode() {
+void JandyAqualink::iaq_press(uint8_t key) {
   if (!interlock_) {
-    ESP_LOGW(TAG, "pool-mode REFUSED: safety interlock is OFF");
+    ESP_LOGW(TAG, "iaq press REFUSED: safety interlock is OFF (key=0x%02X)", key);
     return;
   }
   if (!iaq_presence_) {
-    ESP_LOGW(TAG, "pool-mode REFUSED: iAqualink presence is OFF");
+    ESP_LOGW(TAG, "iaq press REFUSED: iAqualink presence is OFF (key=0x%02X)", key);
     return;
   }
+  if (!jandy::is_allowed_iaq_key(key)) {
+    ESP_LOGW(TAG, "iaq press REFUSED: key 0x%02X not in the equipment allowlist", key);
+    return;
+  }
+  portENTER_CRITICAL(&mux_);
+  iaq_armed_key_ = key;
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "ARMED iAq key 0x%02X -> sent on next iAqualink poll (one press)", key);
+}
+
+void JandyAqualink::request_pool_mode() {
   int wm;
   portENTER_CRITICAL(&mux_);
   wm = iaq_water_mode_;
@@ -204,10 +215,7 @@ void JandyAqualink::request_pool_mode() {
     ESP_LOGW(TAG, "pool-mode REFUSED: panel is not in spa mode (water_mode=%d)", wm);
     return;
   }
-  portENTER_CRITICAL(&mux_);
-  iaq_armed_key_ = 0x12;  // Spa toggle (home button index 1) -> spa off -> Pool Mode
-  portEXIT_CRITICAL(&mux_);
-  ESP_LOGW(TAG, "ARMED Spa toggle (0x12) -> Pool Mode on next iAqualink poll (one press)");
+  iaq_press(jandy::KEY_IAQ_SPA);  // 0x12 Spa toggle -> spa off -> Pool Mode
 }
 
 // Log iAqualink frames the panel sends our 0x33 slot, skipping the bare poll

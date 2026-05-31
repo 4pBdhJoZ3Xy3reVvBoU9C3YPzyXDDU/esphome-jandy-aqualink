@@ -56,6 +56,11 @@ class JandyAqualink : public Component {
   // Drain/Fill. Idempotent: refuses if not currently in spa mode.
   void request_pool_mode();
 
+  // Press one allowlisted iAqualink home-page equipment button (filter pump,
+  // spa, or pool light). Gated by the master interlock, iAqualink presence, and
+  // the allowlist, which excludes the heaters. Sends exactly one key.
+  void iaq_press(uint8_t key);
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
