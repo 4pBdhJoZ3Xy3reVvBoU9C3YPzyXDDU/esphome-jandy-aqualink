@@ -160,6 +160,11 @@ class JandyAqualink : public Component {
   uint32_t last_dump_us_{0};
   int last_air_{-999}, last_pool_{-999}, last_spa_{-999};
 
+  // selftest result from setup(), re-logged periodically in dump_observations()
+  // because setup() runs before the log stream attaches.
+  bool selftest_ok_{false};
+  std::string selftest_detail_;
+
   // loop()-owned, for publish-on-change.
   uint32_t pub_polls_{0xFFFFFFFF};
   uint32_t pub_errors_{0xFFFFFFFF};
