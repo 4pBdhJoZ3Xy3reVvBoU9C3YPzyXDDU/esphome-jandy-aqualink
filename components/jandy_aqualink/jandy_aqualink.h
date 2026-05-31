@@ -30,6 +30,9 @@ class JandyAqualink : public Component {
   void set_polls_sensor(sensor::Sensor *s) { polls_sensor_ = s; }
   void set_latency_sensor(sensor::Sensor *s) { latency_sensor_ = s; }
   void set_errors_sensor(sensor::Sensor *s) { errors_sensor_ = s; }
+  void set_air_temp_sensor(sensor::Sensor *s) { air_temp_sensor_ = s; }
+  void set_pool_temp_sensor(sensor::Sensor *s) { pool_temp_sensor_ = s; }
+  void set_spa_temp_sensor(sensor::Sensor *s) { spa_temp_sensor_ = s; }
 
   // Phase 2 gated keypress controls. Called from core 0 (HA/web/lambda). The
   // master interlock is OFF by default; with it off the device is exactly v1
@@ -61,6 +64,9 @@ class JandyAqualink : public Component {
   sensor::Sensor *polls_sensor_{nullptr};
   sensor::Sensor *latency_sensor_{nullptr};
   sensor::Sensor *errors_sensor_{nullptr};
+  sensor::Sensor *air_temp_sensor_{nullptr};
+  sensor::Sensor *pool_temp_sensor_{nullptr};
+  sensor::Sensor *spa_temp_sensor_{nullptr};
 
   TaskHandle_t task_{nullptr};
   portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
@@ -83,6 +89,12 @@ class JandyAqualink : public Component {
   uint8_t iaq_addr_{jandy::IAQ_DEV_ID};
   volatile bool iaq_presence_{false};
   volatile uint32_t iaq_acks_{0};
+
+  // iAqualink home-page decoder (core-1 task) + temperature mirrors. -999 means
+  // not yet read. loop() on core 0 publishes them on change.
+  jandy::IaqReader iaq_reader_;
+  volatile int t_air_{-999}, t_pool_{-999}, t_spa_{-999};
+  int pub_air_{-1000}, pub_pool_{-1000}, pub_spa_{-1000};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records

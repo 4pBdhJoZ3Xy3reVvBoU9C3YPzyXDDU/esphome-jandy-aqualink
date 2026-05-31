@@ -111,6 +111,13 @@ void JandyAqualink::task_loop() {
         last_reply_us_ = dt;
         portEXIT_CRITICAL(&mux_);
         log_iaq_frame(f);  // after the reply, never delays it
+        iaq_reader_.feed(f);
+        const auto &ts = iaq_reader_.state;
+        portENTER_CRITICAL(&mux_);
+        if (ts.has_air) t_air_ = ts.air;
+        if (ts.has_pool) t_pool_ = ts.pool;
+        if (ts.has_spa) t_spa_ = ts.spa;
+        portEXIT_CRITICAL(&mux_);
       } else {
         portENTER_CRITICAL(&mux_);
         frames_++;
@@ -248,13 +255,30 @@ void JandyAqualink::dump_observations() {
 
 void JandyAqualink::loop() {
   uint32_t polls, errors, latency, frames, iaq;
+  int air, pool, spa;
   portENTER_CRITICAL(&mux_);
   polls = acks_sent_;
   errors = bad_cksum_;
   latency = last_reply_us_;
   frames = frames_;
   iaq = iaq_acks_;
+  air = t_air_;
+  pool = t_pool_;
+  spa = t_spa_;
   portEXIT_CRITICAL(&mux_);
+
+  if (air_temp_sensor_ && air != -999 && air != pub_air_) {
+    air_temp_sensor_->publish_state(air);
+    pub_air_ = air;
+  }
+  if (pool_temp_sensor_ && pool != -999 && pool != pub_pool_) {
+    pool_temp_sensor_->publish_state(pool);
+    pub_pool_ = pool;
+  }
+  if (spa_temp_sensor_ && spa != -999 && spa != pub_spa_) {
+    spa_temp_sensor_->publish_state(spa);
+    pub_spa_ = spa;
+  }
 
   if (polls_sensor_ && polls != pub_polls_) {
     polls_sensor_->publish_state(polls);

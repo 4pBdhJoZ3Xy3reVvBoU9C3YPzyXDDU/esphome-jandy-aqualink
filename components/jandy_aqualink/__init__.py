@@ -20,6 +20,18 @@ CONF_KEYPAD_ADDRESS = "keypad_address"
 CONF_POLLS_ANSWERED = "polls_answered"
 CONF_REPLY_LATENCY = "reply_latency"
 CONF_CHECKSUM_ERRORS = "checksum_errors"
+CONF_AIR_TEMP = "air_temp"
+CONF_POOL_TEMP = "pool_temp"
+CONF_SPA_TEMP = "spa_temp"
+
+
+def _temp_sensor():
+    return sensor.sensor_schema(
+        unit_of_measurement="°F",
+        accuracy_decimals=0,
+        device_class="temperature",
+        state_class=STATE_CLASS_MEASUREMENT,
+    )
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -47,6 +59,9 @@ CONFIG_SCHEMA = cv.Schema(
             entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
             icon="mdi:alert-circle-outline",
         ),
+        cv.Optional(CONF_AIR_TEMP): _temp_sensor(),
+        cv.Optional(CONF_POOL_TEMP): _temp_sensor(),
+        cv.Optional(CONF_SPA_TEMP): _temp_sensor(),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -69,3 +84,12 @@ async def to_code(config):
     if CONF_CHECKSUM_ERRORS in config:
         s = await sensor.new_sensor(config[CONF_CHECKSUM_ERRORS])
         cg.add(var.set_errors_sensor(s))
+    if CONF_AIR_TEMP in config:
+        s = await sensor.new_sensor(config[CONF_AIR_TEMP])
+        cg.add(var.set_air_temp_sensor(s))
+    if CONF_POOL_TEMP in config:
+        s = await sensor.new_sensor(config[CONF_POOL_TEMP])
+        cg.add(var.set_pool_temp_sensor(s))
+    if CONF_SPA_TEMP in config:
+        s = await sensor.new_sensor(config[CONF_SPA_TEMP])
+        cg.add(var.set_spa_temp_sensor(s))

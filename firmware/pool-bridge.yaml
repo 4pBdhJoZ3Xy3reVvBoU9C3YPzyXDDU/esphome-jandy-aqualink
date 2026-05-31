@@ -65,6 +65,14 @@ jandy_aqualink:
     name: Pool Keypad Reply Latency
   checksum_errors:
     name: Pool Bus Checksum Errors
+  # Temperatures decoded from the iAqualink home page (needs the iAqualink
+  # Presence switch on). Pool vs spa depends on the panel's current valve mode.
+  air_temp:
+    name: Pool Air Temp
+  pool_temp:
+    name: Pool Water Temp
+  spa_temp:
+    name: Spa Water Temp
 
 # --- Phase 2 gated keypress controls ---
 # Reading temperatures needs the panel to redraw its display, which it only does

@@ -120,6 +120,24 @@ class Reader {
   int pending_ = 0;  // 0 none, 1 air, 2 pool, 3 spa
 };
 
+// iAqualink HOME-page temperature decoder (mirror of jandy/iaq.py). Feed it the
+// frames the panel sends the iAqualink device (0x33): page start 0x23 (carries
+// the page type), page messages 0x25 (index byte + text), page end 0x28. On the
+// HOME page (type 0x01) a temperature value sits 4 indices before its label.
+class IaqReader {
+ public:
+  void feed(const Frame &f);
+  Decoded state;
+
+ private:
+  void commit_home();
+  static constexpr int MAX_LINES = 20;
+  static constexpr int LINE_LEN = 20;
+  uint8_t page_type_ = 0;
+  bool present_[MAX_LINES] = {false};
+  char lines_[MAX_LINES][LINE_LEN]{};
+};
+
 // Runs the known frame vectors through the logic and reports e.g. "6/6".
 // Returns true only if every check passes.
 bool selftest(std::string &detail);
