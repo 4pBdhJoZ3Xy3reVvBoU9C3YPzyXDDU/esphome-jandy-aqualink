@@ -42,7 +42,7 @@ class JandyAqualink : public Component {
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
-  void maybe_log_frame(const jandy::Frame &f);
+  void observe_frame(const jandy::Frame &f);
 
   int tx_pin_{19};
   int rx_pin_{22};
@@ -70,9 +70,13 @@ class JandyAqualink : public Component {
   volatile int16_t armed_key_{-1};
   volatile uint32_t keys_sent_{0};
 
-  // Verbose capture dedupe/rate-limit (core-1 task only; not shared).
-  std::vector<uint8_t> last_status_;
-  uint32_t last_status_log_us_{0};
+  // Passive decode + bus census (core-1 task only; not shared). reader_
+  // accumulates temperatures from the panel's broadcast frames; census_ records
+  // each unique (dest,cmd) so it is logged once; last_* throttle the decoded
+  // log to first-seen and changes.
+  jandy::Reader reader_;
+  std::vector<uint16_t> census_;
+  int last_air_{-999}, last_pool_{-999}, last_spa_{-999};
 
   // loop()-owned, for publish-on-change.
   uint32_t pub_polls_{0xFFFFFFFF};

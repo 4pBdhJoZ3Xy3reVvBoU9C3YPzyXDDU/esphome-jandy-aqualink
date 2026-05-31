@@ -91,11 +91,12 @@ void JandyAqualink::task_loop() {
           ESP_LOGW(TAG, "SENT KEY 0x%02X in ACK %02X %02X %02X %02X %02X %02X %02X %02X %02X (reply %u us)",
                    sent_key, ack[0], ack[1], ack[2], ack[3], ack[4], ack[5], ack[6], ack[7], ack[8], dt);
         }
+        observe_frame(f);  // after the reply, never delays it
       } else {
         portENTER_CRITICAL(&mux_);
         frames_++;
         portEXIT_CRITICAL(&mux_);
-        maybe_log_frame(f);  // non-poll only; never delays a reply
+        observe_frame(f);  // census + passive temperature decode
       }
     }
   }
@@ -133,38 +134,55 @@ void JandyAqualink::arm_key(uint8_t key) {
            key, ack[0], ack[1], ack[2], ack[3], ack[4], ack[5], ack[6], ack[7], ack[8]);
 }
 
-// Verbose capture of non-poll frames: display-text (CMD_MSG 0x03 / CMD_MSG_LONG
-// 0x04, the Phase 2 prize) always, and frames to our keypad on change and at
-// most once per 2 s so the repetitive status stream does not flood the log.
-void JandyAqualink::maybe_log_frame(const jandy::Frame &f) {
-  uint8_t cmd = f.cmd();
-  bool is_msg = (cmd == 0x03 || cmd == 0x04);
-  bool to_us = (f.dest() == keypad_addr_);
-  if (!is_msg && !to_us) return;
+// Passive observation: feed every frame to the temperature decoder and log a
+// one-time census of each distinct (dest,cmd) on the bus, so we can see what
+// this panel actually broadcasts without sending any keys. This panel has no
+// LCD keypad, so it emits no CMD_MSG display text; the temperatures live in
+// binary broadcast frames instead.
+void JandyAqualink::observe_frame(const jandy::Frame &f) {
+  reader_.feed(f);
 
-  if (!is_msg) {
-    if (f.raw == last_status_) return;  // identical to last logged status
-    uint32_t now = static_cast<uint32_t>(esp_timer_get_time());
-    if (!last_status_.empty() && (now - last_status_log_us_) < 2000000u) return;
-    last_status_log_us_ = now;
-    last_status_ = f.raw;
+  uint16_t key = (static_cast<uint16_t>(f.dest()) << 8) | f.cmd();
+  bool seen = false;
+  for (uint16_t k : census_) {
+    if (k == key) {
+      seen = true;
+      break;
+    }
+  }
+  if (!seen && census_.size() < 64) {
+    census_.push_back(key);
+    char hex[3 * 40 + 1];
+    char asc[40 + 1];
+    static const char *const H = "0123456789ABCDEF";
+    size_t n = f.raw.size() > 40 ? 40 : f.raw.size();
+    size_t hp = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uint8_t b = f.raw[i];
+      hex[hp++] = H[b >> 4];
+      hex[hp++] = H[b & 0x0F];
+      hex[hp++] = ' ';
+      asc[i] = (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '.';
+    }
+    hex[hp] = '\0';
+    asc[n] = '\0';
+    ESP_LOGI(TAG, "CENSUS dest=0x%02X cmd=0x%02X len=%u | %s| %s", f.dest(), f.cmd(),
+             static_cast<unsigned>(f.raw.size()), hex, asc);
   }
 
-  char hex[3 * 40 + 1];
-  char asc[40 + 1];
-  static const char *const H = "0123456789ABCDEF";
-  size_t n = f.raw.size() > 40 ? 40 : f.raw.size();
-  size_t hp = 0;
-  for (size_t i = 0; i < n; ++i) {
-    uint8_t b = f.raw[i];
-    hex[hp++] = H[b >> 4];
-    hex[hp++] = H[b & 0x0F];
-    hex[hp++] = ' ';
-    asc[i] = (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '.';
+  const auto &s = reader_.state;
+  if (s.has_air && s.air != last_air_) {
+    last_air_ = s.air;
+    ESP_LOGW(TAG, "DECODED air=%d F", s.air);
   }
-  hex[hp] = '\0';
-  asc[n] = '\0';
-  ESP_LOGI(TAG, "RX cmd=0x%02X dest=0x%02X | %s| %s", cmd, f.dest(), hex, asc);
+  if (s.has_pool && s.pool != last_pool_) {
+    last_pool_ = s.pool;
+    ESP_LOGW(TAG, "DECODED pool=%d F", s.pool);
+  }
+  if (s.has_spa && s.spa != last_spa_) {
+    last_spa_ = s.spa;
+    ESP_LOGW(TAG, "DECODED spa=%d F", s.spa);
+  }
 }
 
 void JandyAqualink::loop() {
