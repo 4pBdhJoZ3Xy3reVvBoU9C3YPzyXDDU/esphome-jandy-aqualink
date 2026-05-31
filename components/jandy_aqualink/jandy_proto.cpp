@@ -174,7 +174,7 @@ bool selftest(std::string &detail) {
     uint32_t s = 0;
     for (int i = 0; i < 6; ++i) s += ACK_PRESENCE[i];
     bool pass = fr.size() == 1 && is_poll_to(fr[0], 0x60) && !is_poll_to(fr[0], 0x08) &&
-                static_cast<uint8_t>(s & 0xFF) == 0x13 && ACK_PRESENCE[6] == 0x13;
+                static_cast<uint8_t>(s & 0xFF) == 0x93 && ACK_PRESENCE[6] == 0x93;
     if (pass) ok++;
   }
 

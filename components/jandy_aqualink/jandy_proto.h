@@ -17,11 +17,11 @@ namespace jandy {
 static constexpr uint8_t DLE = 0x10, STX = 0x02, ETX = 0x03, STUFF = 0x00;
 static constexpr uint8_t CMD_POLL = 0x00, CMD_ACK = 0x01, CMD_DISPLAY = 0x25;
 
-// Inert presence ACK: dest 0x00 (master), cmd 0x01, [ack_type=0x00, key=0x00],
-// checksum 0x13. The key byte is 0x00 (no key), which announces presence but
-// issues no command. There is deliberately no path in this build that sends a
-// non-zero key.
-static const uint8_t ACK_PRESENCE[9] = {0x10, 0x02, 0x00, 0x01, 0x00, 0x00, 0x13, 0x10, 0x03};
+// Inert presence ACK for AllButton keypad emulation: dest 0x00 (master),
+// cmd 0x01, [ack_type=0x80 (ACK_ALLB_SIM), key=0x00], checksum 0x93. The key
+// byte is 0x00 (no key), which announces presence but issues no command. There
+// is deliberately no path in this build that sends a non-zero key.
+static const uint8_t ACK_PRESENCE[9] = {0x10, 0x02, 0x00, 0x01, 0x80, 0x00, 0x93, 0x10, 0x03};
 static constexpr size_t ACK_PRESENCE_LEN = 9;
 
 // An un-stuffed logical frame: 10 02 dest cmd data... cksum 10 03.
