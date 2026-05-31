@@ -146,6 +146,10 @@ class Reader {
   int pending_ = 0;  // 0 none, 1 air, 2 pool, 3 spa
 };
 
+// Human name for an iAqualink page type (for legible survey logging), or "?" if
+// unknown. Mirror of jandy/iaq.py iaq_page_name.
+const char *iaq_page_name(uint8_t page_type);
+
 // iAqualink HOME-page temperature decoder (mirror of jandy/iaq.py). Feed it the
 // frames the panel sends the iAqualink device (0x33): page start 0x23 (carries
 // the page type), page messages 0x25 (index byte + text), page end 0x28. On the
@@ -157,12 +161,16 @@ class IaqReader {
   // Current home-page water label: 0 none, 2 pool, 3 spa. Used to gate the
   // pool-mode control so it only fires while the panel is actually in spa mode.
   int water_mode() const { return water_mode_; }
+  // Page type of the most recently completed page (set on page end). Used to gate
+  // navigation, e.g. the Other Devices key is only honored from the HOME page.
+  int current_page() const { return current_page_; }
 
  private:
   void commit_home();
   static constexpr int MAX_LINES = 20;
   static constexpr int LINE_LEN = 20;
   uint8_t page_type_ = 0;
+  uint8_t current_page_ = 0;
   int water_mode_ = 0;
   bool present_[MAX_LINES] = {false};
   char lines_[MAX_LINES][LINE_LEN]{};

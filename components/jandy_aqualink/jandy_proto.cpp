@@ -157,6 +157,7 @@ void IaqReader::feed(const Frame &f) {
     lines_[idx][o] = '\0';
     present_[idx] = true;
   } else if (cmd == 0x28) {  // CMD_IAQ_PAGE_END
+    current_page_ = page_type_;  // promote the displayed page
     if (page_type_ == 0x01) commit_home();  // 0x01 = HOME page
     for (int i = 0; i < MAX_LINES; ++i) present_[i] = false;
   }
@@ -184,6 +185,25 @@ void IaqReader::commit_home() {
       state.has_spa = true;
       water_mode_ = 3;
     }
+  }
+}
+
+// Human page name for legible survey logging (mirror of jandy/iaq.py
+// _PAGE_NAMES, limited to the names the survey needs).
+const char *iaq_page_name(uint8_t p) {
+  switch (p) {
+    case 0x01: return "HOME";
+    case 0x0F: return "MENU";
+    case 0x1E: return "SET_VSP";
+    case 0x2A: return "STATUS2";
+    case 0x2D: return "VSP_SETUP";
+    case 0x30: return "SET_SWG";
+    case 0x35: return "DEVICES2";
+    case 0x36: return "DEVICES";
+    case 0x39: return "SET_TEMP";
+    case 0x4D: return "ONETOUCH";
+    case 0x5B: return "STATUS";
+    default: return "?";
   }
 }
 
@@ -320,7 +340,7 @@ bool selftest(std::string &detail) {
     feed_one({0x10, 0x02, 0x33, 0x25, 0x00, 0x38, 0x38, 0xC2, 0xBA, 0x00, 0x56, 0x10, 0x03});
     feed_one({0x10, 0x02, 0x33, 0x28, 0x05, 0x1F, 0x1A, 0x08, 0x1D, 0xD0, 0x10, 0x03});
     if (ir.state.has_spa && ir.state.spa == 88 && ir.state.has_air && ir.state.air == 156 &&
-        !ir.state.has_pool && ir.water_mode() == 3)
+        !ir.state.has_pool && ir.water_mode() == 3 && ir.current_page() == 0x01)
       ok++;
   }
 

@@ -11,7 +11,7 @@ frames captured from the real RS panel (spa mode on): Spa 88, Air 156.
 
 import unittest
 
-from jandy.iaq import IaqReader
+from jandy.iaq import IaqReader, iaq_page_name
 from tests import fixtures as fx
 
 
@@ -111,6 +111,28 @@ class TestIaqHomePage(unittest.TestCase):
         )
         self.assertFalse(r.has_spa)
         self.assertFalse(r.has_air)
+
+
+class TestIaqCurrentPage(unittest.TestCase):
+    def test_current_page_starts_zero(self):
+        self.assertEqual(IaqReader().current_page, 0)
+
+    def test_current_page_set_after_home_page_end(self):
+        r = IaqReader()
+        feed_frames(r, IAQ_PAGE_START_HOME, IAQ_MSG_I4_SPA, IAQ_MSG_I0_88, IAQ_PAGE_END)
+        self.assertEqual(r.current_page, 0x01)
+
+    def test_current_page_tracks_devices_page(self):
+        r = IaqReader()
+        feed_frames(r, fx.h("10 02 33 23 36 9E 10 03"), IAQ_PAGE_END)
+        self.assertEqual(r.current_page, 0x36)
+
+    def test_page_name_known_and_unknown(self):
+        self.assertEqual(iaq_page_name(0x01), "HOME")
+        self.assertEqual(iaq_page_name(0x36), "DEVICES")
+        self.assertEqual(iaq_page_name(0x5B), "STATUS")
+        self.assertEqual(iaq_page_name(0x1E), "SET_VSP")
+        self.assertTrue(iaq_page_name(0x77).startswith("0x"))
 
 
 if __name__ == "__main__":

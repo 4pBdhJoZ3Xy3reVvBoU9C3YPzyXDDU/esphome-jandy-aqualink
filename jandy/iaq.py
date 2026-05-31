@@ -16,9 +16,38 @@ CMD_IAQ_PAGE_START = 0x23
 CMD_IAQ_PAGE_MSG = 0x25
 CMD_IAQ_PAGE_END = 0x28
 IAQ_PAGE_HOME = 0x01
+IAQ_PAGE_DEVICES = 0x36
+IAQ_PAGE_STATUS = 0x5B
+IAQ_PAGE_SET_VSP = 0x1E
 
 # A temperature value sits this many indices before its label line.
 _VALUE_OFFSET = 4
+
+# Human names for iAqualink page types (AqualinkD aq_serial.h IAQ_PAGE_*), used
+# for legible survey logging and for gating navigation by current page.
+_PAGE_NAMES = {
+    0x01: "HOME",
+    0x0A: "DEVICES_REV",
+    0x0F: "MENU",
+    0x1D: "SET_BOOST",
+    0x1E: "SET_VSP",
+    0x2A: "STATUS2",
+    0x2D: "VSP_SETUP",
+    0x30: "SET_SWG",
+    0x35: "DEVICES2",
+    0x36: "DEVICES",
+    0x39: "SET_TEMP",
+    0x48: "COLOR_LIGHT",
+    0x4B: "SET_TIME",
+    0x4D: "ONETOUCH",
+    0x51: "DEVICES3",
+    0x5B: "STATUS",
+}
+
+
+def iaq_page_name(page_type: int) -> str:
+    """Human name for an iAqualink page type, or 0xNN if unknown."""
+    return _PAGE_NAMES.get(page_type, f"0x{page_type:02X}")
 
 
 def _norm_label(text: str) -> str:
@@ -66,6 +95,7 @@ class IaqReader:
         self.has_pool = False
         self.has_spa = False
         self.water_mode = 0  # current home-page water label: 0 none, 2 pool, 3 spa
+        self.current_page = 0  # page type of the most recently completed page
         self._page_type = 0
         self._lines = {}  # index -> text
 
@@ -83,6 +113,7 @@ class IaqReader:
             text = "".join(chr(b) for b in data[1:] if 0x20 <= b <= 0x7E)
             self._lines[idx] = text
         elif cmd == CMD_IAQ_PAGE_END:
+            self.current_page = self._page_type  # promote the displayed page
             if self._page_type == IAQ_PAGE_HOME:
                 self._commit_home()
             self._lines = {}
