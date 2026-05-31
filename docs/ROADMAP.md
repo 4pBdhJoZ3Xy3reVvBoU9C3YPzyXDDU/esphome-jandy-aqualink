@@ -8,6 +8,17 @@ errors). Read-only, no equipment actuation. Proven on a real RS-8 panel.
 
 ## Phase 2: read temperatures and setpoints
 
+> **Status update (Session 2, 2026-05-30).** The AllButton keypress approach
+> below was built and proven safe, but it does not yield temperatures on the test
+> panel: that panel has **no LCD keypad**, so it emits no `CMD_MSG` display text
+> to read. A full bus census found the panel broadcasts no temperatures passively
+> at all; it only sends the equipment LED bitmap (`08/02`). The panel does poll
+> the dead iAquaLink's slot (0x33) every cycle, and that channel carries the
+> temperature text (`CMD_IAQ_PAGE_MSG` 0x25, which the Reader already decodes).
+> So the real path on this panel is **emulating the iAqualink device at 0x33**,
+> not AllButton keypresses. See `SESSION-3-iaqualink-kickoff.md`. The keypress
+> machinery below remains correct and reusable for iAqualink navigation.
+
 **The problem.** A registered keypad receives two kinds of traffic: binary
 status frames (equipment/LED states), which the panel sends continuously, and
 display-text frames, which carry the human-readable temperatures and setpoints.
