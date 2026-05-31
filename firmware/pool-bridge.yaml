@@ -48,19 +48,21 @@ external_components:
     refresh: 0s
 
 # The Jandy keypad-presence component. Owns the RS485 UART directly and replies
-# to polls for `keypad_address` with the inert presence ACK (no key), which makes
-# the panel stream display/status without actuating any equipment.
+# to polls for `keypad_address` with the inert AllButton ACK (no key), which
+# registers an emulated keypad on the panel without actuating any equipment.
+# v1 publishes presence-health diagnostics; reading temperatures needs the
+# keypad navigation layer (a later phase, see docs/).
 jandy_aqualink:
   tx_pin: 19
   rx_pin: 22
   baud_rate: 9600
-  keypad_address: 0x08
-  air_temperature:
-    name: Pool Air Temperature
-  pool_temperature:
-    name: Pool Water Temperature
-  spa_temperature:
-    name: Spa Water Temperature
+  keypad_address: 0x08   # a free AllButton keypad slot (0x08-0x0B); see README
+  polls_answered:
+    name: Pool Keypad Polls Answered
+  reply_latency:
+    name: Pool Keypad Reply Latency
+  checksum_errors:
+    name: Pool Bus Checksum Errors
 
 # Diagnostics (unchanged from the bridge build).
 sensor:
