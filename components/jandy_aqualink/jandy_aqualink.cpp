@@ -5,6 +5,8 @@
 #include "driver/uart.h"
 #include "esp_timer.h"
 
+#include <cstdio>  // snprintf
+
 namespace esphome {
 namespace jandy_aqualink {
 
@@ -137,6 +139,7 @@ void JandyAqualink::task_loop() {
         if (ts.has_pool) t_pool_ = ts.pool;
         if (ts.has_spa) t_spa_ = ts.spa;
         iaq_water_mode_ = iaq_reader_.water_mode();
+        iaq_current_page_ = iaq_reader_.current_page();
         portEXIT_CRITICAL(&mux_);
       } else {
         portENTER_CRITICAL(&mux_);
@@ -206,6 +209,33 @@ void JandyAqualink::iaq_press(uint8_t key) {
   ESP_LOGW(TAG, "ARMED iAq key 0x%02X -> sent on next iAqualink poll (one press)", key);
 }
 
+void JandyAqualink::iaq_nav(uint8_t key) {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "iaq nav REFUSED: safety interlock is OFF (key=0x%02X)", key);
+    return;
+  }
+  if (!iaq_presence_) {
+    ESP_LOGW(TAG, "iaq nav REFUSED: iAqualink presence is OFF (key=0x%02X)", key);
+    return;
+  }
+  int page;
+  portENTER_CRITICAL(&mux_);
+  page = iaq_current_page_;
+  portEXIT_CRITICAL(&mux_);
+  // Accept a global navigation key on any page; accept Other Devices (0x18) only
+  // from the HOME page, where it cannot mean a grid tile. Everything else refused.
+  bool ok = jandy::is_iaq_nav_key(key);
+  if (!ok && key == jandy::KEY_IAQT_OTHER_DEVICES && page == 0x01) ok = true;
+  if (!ok) {
+    ESP_LOGW(TAG, "iaq nav REFUSED: key 0x%02X is not a nav key here (page=0x%02X)", key, page);
+    return;
+  }
+  portENTER_CRITICAL(&mux_);
+  iaq_armed_key_ = key;
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "ARMED iAq NAV key 0x%02X -> sent on next iAqualink poll (one press)", key);
+}
+
 void JandyAqualink::request_pool_mode() {
   int wm;
   portENTER_CRITICAL(&mux_);
@@ -223,7 +253,20 @@ void JandyAqualink::request_pool_mode() {
 // text (temperatures); the ascii column on the right shows it.
 void JandyAqualink::log_iaq_frame(const jandy::Frame &f) {
   uint8_t cmd = f.cmd();
-  if (cmd == 0x30 || cmd == 0x00) return;
+  if (cmd == 0x30 || cmd == 0x00) return;  // skip bare poll / probe keepalives
+  const char *role = "frame";
+  char extra[24] = "";
+  if (cmd == 0x23) {  // page start: data[0] = page type
+    role = "PAGE START";
+    uint8_t pt = f.data_len() >= 1 ? f.data()[0] : 0;
+    snprintf(extra, sizeof(extra), " %s(0x%02X)", jandy::iaq_page_name(pt), pt);
+  } else if (cmd == 0x24) {
+    role = "BUTTON";
+  } else if (cmd == 0x25) {
+    role = "MSG";
+  } else if (cmd == 0x28) {
+    role = "PAGE END";
+  }
   char hex[3 * 40 + 1];
   char asc[40 + 1];
   static const char *const H = "0123456789ABCDEF";
@@ -238,7 +281,7 @@ void JandyAqualink::log_iaq_frame(const jandy::Frame &f) {
   }
   hex[hp] = '\0';
   asc[n] = '\0';
-  ESP_LOGI(TAG, "IAQ cmd=0x%02X | %s| %s", cmd, hex, asc);
+  ESP_LOGI(TAG, "IAQ %s%s | %s| %s", role, extra, hex, asc);
 }
 
 // Passive observation: feed every frame to the temperature decoder and log a
@@ -262,6 +305,24 @@ void JandyAqualink::observe_frame(const jandy::Frame &f) {
     e.key = key;
     e.sample = f.raw;
     census_.push_back(std::move(e));
+  }
+
+  // During the survey, surface any pump-addressed frame that carries data (not a
+  // bare poll), in case the live RPM is sniffable passively from the 0x60 traffic.
+  // Bare polls (cmd 0x00) are frequent and empty, and already show in the census.
+  if (f.dest() == 0x60 && f.cmd() != 0x00) {
+    char hex[3 * 32 + 1];
+    static const char *const H = "0123456789ABCDEF";
+    size_t n = f.raw.size() > 32 ? 32 : f.raw.size();
+    size_t hp = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uint8_t b = f.raw[i];
+      hex[hp++] = H[b >> 4];
+      hex[hp++] = H[b & 0x0F];
+      hex[hp++] = ' ';
+    }
+    hex[hp] = '\0';
+    ESP_LOGI(TAG, "PUMP 0x60 cmd=0x%02X len=%u: %s", f.cmd(), static_cast<unsigned>(f.raw.size()), hex);
   }
 
   const auto &s = reader_.state;

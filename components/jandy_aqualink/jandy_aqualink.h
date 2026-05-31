@@ -61,6 +61,13 @@ class JandyAqualink : public Component {
   // the allowlist, which excludes the heaters. Sends exactly one key.
   void iaq_press(uint8_t key);
 
+  // Send one global navigation key on the iAqualink path to walk pages during a
+  // read-only survey. Gated by the master interlock + iAqualink presence + the
+  // navigation allowlist. The Other Devices key (0x18) is accepted only while the
+  // decoder confirms we are on the HOME page, so it can never mean a grid tile on
+  // another page. Sends exactly one key; never an equipment or value keycode.
+  void iaq_nav(uint8_t key);
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
@@ -112,6 +119,7 @@ class JandyAqualink : public Component {
   // ACK to 0x33. iaq_water_mode_ mirrors the decoder's current mode to core 0.
   volatile int16_t iaq_armed_key_{-1};
   volatile int iaq_water_mode_{0};
+  volatile int iaq_current_page_{0};  // mirror of decoder current_page() for core-0 nav gating
   volatile uint32_t iaq_keys_sent_{0};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
