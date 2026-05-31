@@ -251,37 +251,48 @@ void JandyAqualink::request_pool_mode() {
 // Log iAqualink frames the panel sends our 0x33 slot, skipping the bare poll
 // (0x30) and probe (0x00) keepalives. The 0x25 page messages carry the display
 // text (temperatures); the ascii column on the right shows it.
+// Log iAqualink page frames compactly. The panel's per-button enumeration (0x24)
+// and message lines (0x25) carry the labels and values we survey. The core-1
+// task's logger truncates long messages (about 46 chars), which cut off a raw
+// hex dump, so we decode the label/text on-device and log a short legible line
+// per frame: page name on start, "B<idx> s<state> t<type>: <label>" per button,
+// "M<idx>: <text>" per message.
 void JandyAqualink::log_iaq_frame(const jandy::Frame &f) {
   uint8_t cmd = f.cmd();
   if (cmd == 0x30 || cmd == 0x00) return;  // skip bare poll / probe keepalives
-  const char *role = "frame";
-  char extra[24] = "";
+  const uint8_t *d = f.data();
+  size_t dl = f.data_len();
   if (cmd == 0x23) {  // page start: data[0] = page type
-    role = "PAGE START";
-    uint8_t pt = f.data_len() >= 1 ? f.data()[0] : 0;
-    snprintf(extra, sizeof(extra), " %s(0x%02X)", jandy::iaq_page_name(pt), pt);
-  } else if (cmd == 0x24) {
-    role = "BUTTON";
-  } else if (cmd == 0x25) {
-    role = "MSG";
-  } else if (cmd == 0x28) {
-    role = "PAGE END";
+    uint8_t pt = dl >= 1 ? d[0] : 0;
+    ESP_LOGI(TAG, "IAQ PAGE %s(0x%02X)", jandy::iaq_page_name(pt), pt);
+  } else if (cmd == 0x28) {  // page end
+    ESP_LOGI(TAG, "IAQ PAGE END");
+  } else if (cmd == 0x24 && dl >= 4) {  // button: idx,state,unk,type, then label words
+    char lbl[28];
+    size_t o = 0;
+    for (size_t i = 4; i < dl && o < sizeof(lbl) - 1; ++i) {
+      uint8_t b = d[i];
+      if (b == 0x00) {
+        if (o > 0 && lbl[o - 1] != ' ') lbl[o++] = ' ';
+      } else if (b >= 0x20 && b <= 0x7E) {
+        lbl[o++] = static_cast<char>(b);
+      }
+    }
+    while (o > 0 && lbl[o - 1] == ' ') o--;
+    lbl[o] = '\0';
+    ESP_LOGI(TAG, "IAQ B%u s%u t%u: %s", static_cast<unsigned>(d[0]), static_cast<unsigned>(d[1]),
+             static_cast<unsigned>(d[3]), lbl);
+  } else if (cmd == 0x25 && dl >= 1) {  // message line: idx, then NUL-terminated text
+    char txt[28];
+    size_t o = 0;
+    for (size_t i = 1; i < dl && o < sizeof(txt) - 1; ++i) {
+      uint8_t b = d[i];
+      if (b == 0x00) break;
+      if (b >= 0x20 && b <= 0x7E) txt[o++] = static_cast<char>(b);
+    }
+    txt[o] = '\0';
+    ESP_LOGI(TAG, "IAQ M%u: %s", static_cast<unsigned>(d[0]), txt);
   }
-  char hex[3 * 40 + 1];
-  char asc[40 + 1];
-  static const char *const H = "0123456789ABCDEF";
-  size_t n = f.raw.size() > 40 ? 40 : f.raw.size();
-  size_t hp = 0;
-  for (size_t i = 0; i < n; ++i) {
-    uint8_t b = f.raw[i];
-    hex[hp++] = H[b >> 4];
-    hex[hp++] = H[b & 0x0F];
-    hex[hp++] = ' ';
-    asc[i] = (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '.';
-  }
-  hex[hp] = '\0';
-  asc[n] = '\0';
-  ESP_LOGI(TAG, "IAQ %s%s | %s| %s", role, extra, hex, asc);
 }
 
 // Passive observation: feed every frame to the temperature decoder and log a
