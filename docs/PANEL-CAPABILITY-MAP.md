@@ -15,6 +15,7 @@ survey (pool mode, filter pump running).
 | DEVICES | 0x36 | Home then Other Devices (key 0x18) | full equipment list |
 | DEVICES2 | 0x35 | Next Page (key 0x21) from Status | macros / modes |
 | STATUS2 | 0x2A | Status (key 0x06) | live pump model, RPM, watts |
+| MENU | 0x0F | Menu (key 0x02) | renders EMPTY to our device (no items enumerated) |
 
 The panel enumerates a page in full only on the first visit after our device
 registers, then sends only changed buttons. To re-capture a full page, drop and
@@ -39,9 +40,16 @@ Notes:
   0x60) only empty polls; RPM/watts appear only as text on the STATUS2 page. So
   reading speed requires viewing STATUS2 (a brief navigation), unlike temps which
   the HOME page provides on its own.
-- SWG / salt readings were not found on any page walked. Phase 1 saw "Generating"
-  via AqualinkD, so the SWG exists; it may live on a page not visited (Menu or a
-  device-status page) or may not surface over iAqualink. To map another time.
+- SWG / salt readings are NOT on any reachable iAqualink page. Checked 2026-05-31:
+  HOME, DEVICES, DEVICES2, STATUS2, and MENU (which renders empty to us); paging
+  forward from STATUS2 only reaches DEVICES2. Phase 1 saw "Generating" via
+  AqualinkD, which almost certainly read the salt cell's own RS-bus frames, not an
+  iAqualink page. Reading salt/SWG here would be a separate task: find the SWG
+  device in the bus census and decode its salt %/ppm frames passively, not page
+  navigation.
+- Pump RPM changes on the pump's own schedule (observed 2750 RPM / 1263 W stepping
+  to 1700 RPM / 293 W during the survey, with no input from us), which confirms
+  the reading tracks the live pump.
 
 ## Controllable items: DEVICES page (0x36)
 
@@ -93,6 +101,9 @@ Keycode = 0x11 + slot, valid only on this page.
 | 2 | 0x13 | Day Party |
 | 3 | 0x14 | All Off |
 
+These are the OneTouch macros (the dedicated OneTouch key 0x03 reaches the same
+set). The MENU page (key 0x02, type 0x0F) renders empty to the emulated device.
+
 ## CRITICAL: keycode meaning is page-dependent
 
 The same keycode means different things on different pages. Examples:
@@ -116,9 +127,13 @@ This is the central safety rule for all future control work here.
 
 ## Build roadmap (safe order)
 
-1. Pump RPM/watts READING (this session): view STATUS2, decode, publish sensors.
-2. Spa Light, Extra Aux, Sprinklers (DEVICES toggles, low risk): add to a
+1. Pump RPM/watts READING: DONE 2026-05-31 (STATUS2 decode + on-demand Read Pump
+   Speed button, publishes Pool Pump Speed / Pool Pump Watts).
+2. Pump RPM SETTING (the value-set handshake above): heavily gated, founder watching.
+3. Spa Light, Extra Aux, Sprinklers (DEVICES toggles, low risk): add to a
    devices-page allowlist; press on the devices page only.
-3. Pump RPM SETTING (the value-set handshake above): heavily gated, founder watching.
 4. Spa Mode and other valve modes (medium risk): investigate valve behavior first.
 5. Pool Heat and Spa Heat (high risk, LAST per founder): heaters.
+6. SWG / salt READING (separate effort, not page-based): locate the salt cell in
+   the bus census and decode its salt %/ppm/state frames passively. Not on any
+   iAqualink page, so this is bus-frame reverse-engineering, lower priority.
