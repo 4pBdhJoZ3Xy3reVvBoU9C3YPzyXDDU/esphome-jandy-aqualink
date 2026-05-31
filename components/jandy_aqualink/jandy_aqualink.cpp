@@ -44,6 +44,11 @@ void JandyAqualink::task_loop() {
   frames.reserve(16);
 
   for (;;) {
+    uint32_t now_us = static_cast<uint32_t>(esp_timer_get_time());
+    if (now_us - last_dump_us_ > 12000000u) {
+      last_dump_us_ = now_us;
+      dump_observations();
+    }
     int n = uart_read_bytes(JANDY_UART, buf, sizeof(buf), pdMS_TO_TICKS(1));
     if (n <= 0) continue;
 
@@ -144,30 +149,17 @@ void JandyAqualink::observe_frame(const jandy::Frame &f) {
 
   uint16_t key = (static_cast<uint16_t>(f.dest()) << 8) | f.cmd();
   bool seen = false;
-  for (uint16_t k : census_) {
-    if (k == key) {
+  for (auto &e : census_) {
+    if (e.key == key) {
       seen = true;
       break;
     }
   }
   if (!seen && census_.size() < 64) {
-    census_.push_back(key);
-    char hex[3 * 40 + 1];
-    char asc[40 + 1];
-    static const char *const H = "0123456789ABCDEF";
-    size_t n = f.raw.size() > 40 ? 40 : f.raw.size();
-    size_t hp = 0;
-    for (size_t i = 0; i < n; ++i) {
-      uint8_t b = f.raw[i];
-      hex[hp++] = H[b >> 4];
-      hex[hp++] = H[b & 0x0F];
-      hex[hp++] = ' ';
-      asc[i] = (b >= 0x20 && b <= 0x7E) ? static_cast<char>(b) : '.';
-    }
-    hex[hp] = '\0';
-    asc[n] = '\0';
-    ESP_LOGI(TAG, "CENSUS dest=0x%02X cmd=0x%02X len=%u | %s| %s", f.dest(), f.cmd(),
-             static_cast<unsigned>(f.raw.size()), hex, asc);
+    CensusEntry e;
+    e.key = key;
+    e.sample = f.raw;
+    census_.push_back(std::move(e));
   }
 
   const auto &s = reader_.state;
@@ -183,6 +175,31 @@ void JandyAqualink::observe_frame(const jandy::Frame &f) {
     last_spa_ = s.spa;
     ESP_LOGW(TAG, "DECODED spa=%d F", s.spa);
   }
+}
+
+// Re-log the accumulated census and decoded temps periodically so a post-boot
+// log capture sees them (the bus's distinct frame types are all first seen in
+// the first second after boot, before a log stream attaches).
+void JandyAqualink::dump_observations() {
+  ESP_LOGI(TAG, "bus census: %u distinct (dest/cmd) frame types", static_cast<unsigned>(census_.size()));
+  for (auto &e : census_) {
+    char hex[3 * 40 + 1];
+    static const char *const H = "0123456789ABCDEF";
+    size_t n = e.sample.size() > 40 ? 40 : e.sample.size();
+    size_t hp = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uint8_t b = e.sample[i];
+      hex[hp++] = H[b >> 4];
+      hex[hp++] = H[b & 0x0F];
+      hex[hp++] = ' ';
+    }
+    hex[hp] = '\0';
+    ESP_LOGI(TAG, "  %02X/%02X x%u: %s", static_cast<unsigned>(e.key >> 8),
+             static_cast<unsigned>(e.key & 0xFF), static_cast<unsigned>(e.sample.size()), hex);
+  }
+  const auto &s = reader_.state;
+  ESP_LOGW(TAG, "decoded val(seen): air=%d(%d) pool=%d(%d) spa=%d(%d)", s.air, s.has_air, s.pool,
+           s.has_pool, s.spa, s.has_spa);
 }
 
 void JandyAqualink::loop() {

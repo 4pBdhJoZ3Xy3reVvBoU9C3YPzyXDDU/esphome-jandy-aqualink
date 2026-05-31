@@ -41,6 +41,7 @@ ota:
 
 logger:
   baud_rate: 0  # no serial logger; logs stream to the dashboard over the network
+  task_log_buffer_size: 4096  # the core-1 task logs a multi-line bus census in bursts
 
 external_components:
   # Point this at the component repo. refresh: 0s forces a re-pull each compile.

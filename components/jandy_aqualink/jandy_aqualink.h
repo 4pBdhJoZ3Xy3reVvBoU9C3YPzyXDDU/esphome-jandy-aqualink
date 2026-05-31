@@ -43,6 +43,7 @@ class JandyAqualink : public Component {
   static void task_trampoline(void *arg);
   void task_loop();
   void observe_frame(const jandy::Frame &f);
+  void dump_observations();
 
   int tx_pin_{19};
   int rx_pin_{22};
@@ -75,7 +76,12 @@ class JandyAqualink : public Component {
   // each unique (dest,cmd) so it is logged once; last_* throttle the decoded
   // log to first-seen and changes.
   jandy::Reader reader_;
-  std::vector<uint16_t> census_;
+  struct CensusEntry {
+    uint16_t key;                 // (dest << 8) | cmd
+    std::vector<uint8_t> sample;  // first raw frame seen of this type
+  };
+  std::vector<CensusEntry> census_;
+  uint32_t last_dump_us_{0};
   int last_air_{-999}, last_pool_{-999}, last_spa_{-999};
 
   // loop()-owned, for publish-on-change.
