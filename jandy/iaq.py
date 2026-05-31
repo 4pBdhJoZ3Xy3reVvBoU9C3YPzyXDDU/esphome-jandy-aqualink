@@ -140,3 +140,47 @@ class IaqReader:
                 self.spa = val
                 self.has_spa = True
                 self.water_mode = 3
+
+
+CMD_IAQ_PAGE_BUTTON = 0x24
+
+
+class IaqButton:
+    """One enumerated button from an iAqualink page (a 0x24 frame)."""
+
+    __slots__ = ("index", "state", "type", "segments")
+
+    def __init__(self, index, state, type_, segments):
+        self.index = index
+        self.state = state
+        self.type = type_
+        self.segments = segments
+
+    def __repr__(self):
+        return f"IaqButton(i={self.index} state=0x{self.state:02X} type=0x{self.type:02X} {self.segments})"
+
+
+def parse_iaq_button(frame):
+    """Parse a 0x24 button frame, or return None if it is not one.
+
+    Layout after cmd: data[0]=index, [1]=state, [2]=unknown, [3]=type, then
+    NUL-separated printable text segments (label words plus a state token). The
+    segments are returned as-is; the survey reads which is label vs state by eye.
+    """
+    if frame.cmd != CMD_IAQ_PAGE_BUTTON:
+        return None
+    d = frame.data
+    if len(d) < 4:
+        return None
+    segments = []
+    cur = []
+    for b in d[4:]:
+        if b == 0x00:
+            if cur:
+                segments.append("".join(cur))
+                cur = []
+        elif 0x20 <= b <= 0x7E:
+            cur.append(chr(b))
+    if cur:
+        segments.append("".join(cur))
+    return IaqButton(d[0], d[1], d[3], segments)
