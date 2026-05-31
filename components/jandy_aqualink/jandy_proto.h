@@ -76,11 +76,12 @@ static const uint8_t ACK_IAQ_PRESENCE[9] = {0x10, 0x02, 0x00, 0x01, 0x00, 0x00, 
 // 1 Spa, 2 Pool Heat, 3 Spa Heat, 6 Pool Light. is_allowed_iaq_key is the
 // allowlist of keys this build will transmit; it deliberately EXCLUDES the heater
 // buttons (0x13, 0x14) and everything else.
-static constexpr uint8_t KEY_IAQ_FILTER_PUMP = 0x11, KEY_IAQ_SPA = 0x12,
-                         KEY_IAQ_POOL_LIGHT = 0x17;
+static constexpr uint8_t KEY_IAQ_FILTER_PUMP = 0x11, KEY_IAQ_SPA = 0x12, KEY_IAQ_CLEANER = 0x15,
+                         KEY_IAQ_AIR_BLOWER = 0x16, KEY_IAQ_POOL_LIGHT = 0x17;
 
 inline bool is_allowed_iaq_key(uint8_t key) {
-  return key == KEY_IAQ_FILTER_PUMP || key == KEY_IAQ_SPA || key == KEY_IAQ_POOL_LIGHT;
+  return key == KEY_IAQ_FILTER_PUMP || key == KEY_IAQ_SPA || key == KEY_IAQ_CLEANER ||
+         key == KEY_IAQ_AIR_BLOWER || key == KEY_IAQ_POOL_LIGHT;
 }
 
 // An un-stuffed logical frame: 10 02 dest cmd data... cksum 10 03.

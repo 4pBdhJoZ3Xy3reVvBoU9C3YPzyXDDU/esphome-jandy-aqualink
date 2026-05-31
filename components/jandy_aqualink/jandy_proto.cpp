@@ -283,8 +283,10 @@ bool selftest(std::string &detail) {
       if (iaq[i] != iaq_exp[i]) pass = false;
       if (iaq[i] != ACK_IAQ_PRESENCE[i]) pass = false;
     }
-    // iAqualink equipment allowlist: filter/spa/light allowed, heaters refused.
-    if (!is_allowed_iaq_key(0x11) || !is_allowed_iaq_key(0x12) || !is_allowed_iaq_key(0x17))
+    // iAqualink equipment allowlist: filter/spa/cleaner/blower/light allowed,
+    // heaters (0x13, 0x14) refused.
+    if (!is_allowed_iaq_key(0x11) || !is_allowed_iaq_key(0x12) || !is_allowed_iaq_key(0x15) ||
+        !is_allowed_iaq_key(0x16) || !is_allowed_iaq_key(0x17))
       pass = false;
     if (is_allowed_iaq_key(0x13) || is_allowed_iaq_key(0x14) || is_allowed_iaq_key(0x09))
       pass = false;

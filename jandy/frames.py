@@ -145,12 +145,16 @@ ACK_IAQ_PRESENCE = build_ack(ACK_IAQ_TOUCH, 0x00)  # 10 02 00 01 00 00 13 10 03
 # 6 Pool Light.
 KEY_IAQ_FILTER_PUMP = 0x11  # home button 0
 KEY_IAQ_SPA = 0x12          # home button 1 (toggles spa mode / valves)
+KEY_IAQ_CLEANER = 0x15      # home button 4
+KEY_IAQ_AIR_BLOWER = 0x16   # home button 5
 KEY_IAQ_POOL_LIGHT = 0x17   # home button 6
 
 # Allowlist of iAqualink equipment keys this build will transmit. Deliberately
 # EXCLUDES the heater buttons (Pool Heat 0x13, Spa Heat 0x14) and everything
 # else, so a control press can never fire a heater.
-_ALLOWED_IAQ_KEYS = frozenset({KEY_IAQ_FILTER_PUMP, KEY_IAQ_SPA, KEY_IAQ_POOL_LIGHT})
+_ALLOWED_IAQ_KEYS = frozenset(
+    {KEY_IAQ_FILTER_PUMP, KEY_IAQ_SPA, KEY_IAQ_CLEANER, KEY_IAQ_AIR_BLOWER, KEY_IAQ_POOL_LIGHT}
+)
 
 
 def is_allowed_iaq_key(key: int) -> bool:

@@ -163,6 +163,16 @@ button:
     icon: "mdi:lightbulb"
     on_press:
       - lambda: "id(jandy_comp).iaq_press(0x17);"   # home button 6 = Pool Light
+  - platform: template
+    name: "Cleaner"
+    icon: "mdi:robot-vacuum"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_press(0x15);"   # home button 4 = Cleaner
+  - platform: template
+    name: "Air Blower"
+    icon: "mdi:weather-windy"
+    on_press:
+      - lambda: "id(jandy_comp).iaq_press(0x16);"   # home button 5 = Air Blower
 
 # Diagnostics (unchanged from the bridge build).
 sensor:
