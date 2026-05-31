@@ -133,6 +133,9 @@ inline bool is_poll_to(const Frame &f, uint8_t keypad_addr) {
 struct Decoded {
   bool has_air = false, has_pool = false, has_spa = false;
   int air = 0, pool = 0, spa = 0;
+  // Pump readings decoded from the iAqualink STATUS page text.
+  bool has_rpm = false, has_watts = false;
+  int rpm = 0, watts = 0;
 };
 
 // Pairs keypad display labels with the value line that immediately follows, and
@@ -167,6 +170,7 @@ class IaqReader {
 
  private:
   void commit_home();
+  void commit_status();
   static constexpr int MAX_LINES = 20;
   static constexpr int LINE_LEN = 20;
   uint8_t page_type_ = 0;

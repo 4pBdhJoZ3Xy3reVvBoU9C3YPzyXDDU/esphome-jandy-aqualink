@@ -1,5 +1,7 @@
 #include "jandy_proto.h"
 
+#include <cstring>  // strstr
+
 namespace jandy {
 
 void FrameExtractor::feed(const uint8_t *data, size_t len, std::vector<Frame> &out) {
@@ -159,6 +161,7 @@ void IaqReader::feed(const Frame &f) {
   } else if (cmd == 0x28) {  // CMD_IAQ_PAGE_END
     current_page_ = page_type_;  // promote the displayed page
     if (page_type_ == 0x01) commit_home();  // 0x01 = HOME page
+    else if (page_type_ == 0x2A || page_type_ == 0x5B) commit_status();  // STATUS2 / STATUS
     for (int i = 0; i < MAX_LINES; ++i) present_[i] = false;
   }
 }
@@ -184,6 +187,31 @@ void IaqReader::commit_home() {
       state.spa = val;
       state.has_spa = true;
       water_mode_ = 3;
+    }
+  }
+}
+
+void IaqReader::commit_status() {
+  // The STATUS page lists the pump as text lines, e.g. "    RPM: 2750" and
+  // "  Watts: 1263". Find each and parse the trailing integer.
+  for (int idx = 0; idx < MAX_LINES; ++idx) {
+    if (!present_[idx]) continue;
+    const char *line = lines_[idx];
+    const char *p = strstr(line, "RPM:");
+    if (p) {
+      int v;
+      if (parse_leading_int(std::string(p + 4), v)) {
+        state.rpm = v;
+        state.has_rpm = true;
+      }
+    }
+    const char *w = strstr(line, "Watts:");
+    if (w) {
+      int v;
+      if (parse_leading_int(std::string(w + 6), v)) {
+        state.watts = v;
+        state.has_watts = true;
+      }
     }
   }
 }
@@ -341,6 +369,27 @@ bool selftest(std::string &detail) {
     feed_one({0x10, 0x02, 0x33, 0x28, 0x05, 0x1F, 0x1A, 0x08, 0x1D, 0xD0, 0x10, 0x03});
     if (ir.state.has_spa && ir.state.spa == 88 && ir.state.has_air && ir.state.air == 156 &&
         !ir.state.has_pool && ir.water_mode() == 3 && ir.current_page() == 0x01)
+      ok++;
+  }
+
+  // iAqualink STATUS2 page: pump RPM 2750 and watts 1263 from captured text.
+  {
+    total++;
+    IaqReader ir;
+    auto feed_one = [&](const std::vector<uint8_t> &w) {
+      FrameExtractor ex;
+      std::vector<Frame> fr;
+      ex.feed(w.data(), w.size(), fr);
+      for (const auto &f : fr) ir.feed(f);
+    };
+    feed_one({0x10, 0x02, 0x33, 0x23, 0x2A, 0x92, 0x10, 0x03});
+    feed_one({0x10, 0x02, 0x33, 0x25, 0x03, 0x20, 0x20, 0x20, 0x20, 0x52, 0x50, 0x4D, 0x3A, 0x20, 0x32,
+              0x37, 0x35, 0x30, 0x00, 0x04, 0x10, 0x03});
+    feed_one({0x10, 0x02, 0x33, 0x25, 0x04, 0x20, 0x20, 0x57, 0x61, 0x74, 0x74, 0x73, 0x3A, 0x20, 0x31,
+              0x32, 0x36, 0x33, 0x00, 0xE7, 0x10, 0x03});
+    feed_one({0x10, 0x02, 0x33, 0x28, 0x00, 0x6D, 0x10, 0x03});
+    if (ir.state.has_rpm && ir.state.rpm == 2750 && ir.state.has_watts && ir.state.watts == 1263 &&
+        ir.current_page() == 0x2A)
       ok++;
   }
 

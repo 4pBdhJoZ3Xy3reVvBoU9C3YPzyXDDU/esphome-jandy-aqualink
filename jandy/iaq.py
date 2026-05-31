@@ -96,6 +96,10 @@ class IaqReader:
         self.has_spa = False
         self.water_mode = 0  # current home-page water label: 0 none, 2 pool, 3 spa
         self.current_page = 0  # page type of the most recently completed page
+        self.pump_rpm = 0
+        self.has_pump_rpm = False
+        self.pump_watts = 0
+        self.has_pump_watts = False
         self._page_type = 0
         self._lines = {}  # index -> text
 
@@ -116,6 +120,8 @@ class IaqReader:
             self.current_page = self._page_type  # promote the displayed page
             if self._page_type == IAQ_PAGE_HOME:
                 self._commit_home()
+            elif self._page_type in (0x2A, 0x5B):  # STATUS2 / STATUS
+                self._commit_status()
             self._lines = {}
 
     def _commit_home(self):
@@ -140,6 +146,22 @@ class IaqReader:
                 self.spa = val
                 self.has_spa = True
                 self.water_mode = 3
+
+    def _commit_status(self):
+        # The STATUS page lists the pump as text lines: "    RPM: 2750" and
+        # "  Watts: 1263". Find each and parse the trailing integer.
+        for text in self._lines.values():
+            up = text.upper()
+            if "RPM:" in up:
+                v = _leading_int(text[up.index("RPM:") + 4:])
+                if v is not None:
+                    self.pump_rpm = v
+                    self.has_pump_rpm = True
+            if "WATTS:" in up:
+                v = _leading_int(text[up.index("WATTS:") + 6:])
+                if v is not None:
+                    self.pump_watts = v
+                    self.has_pump_watts = True
 
 
 CMD_IAQ_PAGE_BUTTON = 0x24
