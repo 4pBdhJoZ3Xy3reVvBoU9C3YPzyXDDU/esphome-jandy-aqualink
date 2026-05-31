@@ -5,6 +5,7 @@
 #include "driver/uart.h"
 #include "esp_timer.h"
 
+#include <cstdio>
 #include <vector>
 
 namespace esphome {
@@ -47,7 +48,7 @@ void JandyAqualink::task_loop() {
   frames.reserve(16);
 
   for (;;) {
-    int n = uart_read_bytes(JANDY_UART, buf, sizeof(buf), pdMS_TO_TICKS(5));
+    int n = uart_read_bytes(JANDY_UART, buf, sizeof(buf), pdMS_TO_TICKS(1));
     if (n <= 0) continue;
 
     frames.clear();
@@ -74,6 +75,16 @@ void JandyAqualink::task_loop() {
         last_reply_us_ = dt;
         portEXIT_CRITICAL(&mux_);
         continue;
+      }
+
+      // Diagnostic: log every non-poll frame (display, status, device replies)
+      // with full hex so we can see exactly what the panel transmits to whom.
+      if (f.cmd() != jandy::CMD_POLL) {
+        char hex[100];
+        size_t p = 0;
+        for (size_t i = 0; i < f.raw.size() && p + 4 < sizeof(hex); i++)
+          p += snprintf(hex + p, sizeof(hex) - p, "%02X ", f.raw[i]);
+        ESP_LOGI("jandyrx", "%s", hex);
       }
 
       reader.feed(f);
