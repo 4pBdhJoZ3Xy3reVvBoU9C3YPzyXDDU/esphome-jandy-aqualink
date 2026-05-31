@@ -92,6 +92,8 @@ class JandyAqualink : public Component {
   sensor::Sensor *air_temp_sensor_{nullptr};
   sensor::Sensor *pool_temp_sensor_{nullptr};
   sensor::Sensor *spa_temp_sensor_{nullptr};
+  sensor::Sensor *pump_rpm_sensor_{nullptr};
+  sensor::Sensor *pump_watts_sensor_{nullptr};
 
   TaskHandle_t task_{nullptr};
   portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
