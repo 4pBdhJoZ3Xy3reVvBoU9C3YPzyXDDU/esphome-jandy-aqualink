@@ -14,9 +14,8 @@ static const char *const TAG = "jandy";
 static constexpr uart_port_t JANDY_UART = UART_NUM_1;
 
 void JandyAqualink::setup() {
-  std::string detail;
-  bool ok = jandy::selftest(detail);
-  ESP_LOGI(TAG, "selftest %s -> %s", ok ? "PASS" : "FAIL", detail.c_str());
+  selftest_ok_ = jandy::selftest(selftest_detail_);
+  ESP_LOGI(TAG, "selftest %s -> %s", selftest_ok_ ? "PASS" : "FAIL", selftest_detail_.c_str());
 
   uart_config_t cfg = {};
   cfg.baud_rate = baud_;
@@ -522,6 +521,9 @@ void JandyAqualink::observe_frame(const jandy::Frame &f) {
 // log capture sees them (the bus's distinct frame types are all first seen in
 // the first second after boot, before a log stream attaches).
 void JandyAqualink::dump_observations() {
+  // Re-log the selftest result periodically: it runs in setup() before the log
+  // stream can attach, so this is the only way a post-boot capture sees it.
+  ESP_LOGI(TAG, "selftest %s -> %s", selftest_ok_ ? "PASS" : "FAIL", selftest_detail_.c_str());
   ESP_LOGI(TAG, "bus census: %u distinct (dest/cmd) frame types", static_cast<unsigned>(census_.size()));
   for (auto &e : census_) {
     char hex[3 * 40 + 1];
