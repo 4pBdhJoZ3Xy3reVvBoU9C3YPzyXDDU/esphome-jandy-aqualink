@@ -58,7 +58,7 @@ This is an ESPHome external component. Add it to your device YAML:
 
 ```yaml
 external_components:
-  - source: github://OWNER/esphome-jandy-aqualink
+  - source: github://4pBdhJoZ3Xy3reVvBoU9C3YPzyXDDU/esphome-jandy-aqualink
     refresh: 0s
 
 jandy_aqualink:
