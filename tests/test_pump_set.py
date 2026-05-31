@@ -70,8 +70,10 @@ class TestBuildVspSetFrame(unittest.TestCase):
         self.assertEqual(frames.build_vsp_set_frame(100), frames.build_vsp_set_frame(600))
 
     def test_no_trailing_nul_before_checksum(self):
-        # The byte right before the checksum (index -3) must be 0xcd, not 0x00.
-        self.assertEqual(frames.build_vsp_set_frame(1600)[-3], 0xCD)
+        # Frame tail is ...cd <cksum> 10 03, so [-1]=ETX, [-2]=DLE, [-3]=cksum,
+        # [-4]=last padding byte. The byte right before the checksum must be 0xcd,
+        # not 0x00 (a trailing NUL there is the known VSP-drop footgun).
+        self.assertEqual(frames.build_vsp_set_frame(1600)[-4], 0xCD)
 
     def test_frame_is_checksum_valid(self):
         # Reuse the extractor to confirm the frame round-trips cleanly.
