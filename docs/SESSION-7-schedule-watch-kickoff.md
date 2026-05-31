@@ -28,6 +28,28 @@ Two pieces:
 2. **Schedule watch**: with auto-refresh running, log/observe RPM over a day and
    report when + to what the panel changes it.
 
+## Why this matters (the founder's real concern)
+
+The founder's worry: the panel's stored schedule will keep fighting whatever
+Home Assistant tries to do. That is a real conflict, since today the panel's
+schedule is the only thing driving the pool. This watch is the prerequisite for
+resolving it.
+
+The reframe (decided with the founder 2026-05-31): now that reliable WRITE
+control is proven, we probably do NOT need to edit the panel's internal schedule
+at all. Instead let HA be the scheduler and either absorb/work around the panel
+schedule once we know what it does, or at minimum GUARD THE SALT FLOOR: if the
+pump ever drops below ~1850 during the day, HA bumps it back up. The panel
+schedule becomes toothless without ever opening its hidden editor.
+
+So this watch decides which world we are in: a SIMPLE schedule (HA override is
+enough, never touch the panel) or a BUSY one (consider an actual wipe, see the
+Session 10 kickoff). Do NOT revive the dead iAquaLink 2.0 to wipe the schedule
+before this watch is done: it is maybe-dead hardware, it fights our 0x33
+emulation for the same bus seat (only one device can hold 0x33 at a time), and
+it is just one of several wipe paths. Keep it as a drawer fallback; decide in
+Session 10.
+
 ## The decision to make FIRST (brainstorm with founder)
 
 Today, reading the speed requires the CONTROL interlock to be armed (see code
