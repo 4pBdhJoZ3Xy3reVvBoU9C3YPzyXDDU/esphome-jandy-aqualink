@@ -31,6 +31,18 @@ STATUS_38_TEMP = h("10 02 38 0C 12 57 66 5B 80 10 03")
 # binary status to 0x33 (cmd 0x28)
 STATUS_33_BIN = h("10 02 33 28 05 1E 1A 0F 36 EF 10 03")
 
+# Keypad equipment-LED status (dest 0x08, cmd 0x02): the de-stuffed LOGICAL frame
+# as the device stores it in Frame.raw. Captured live 2026-06-01 in Service mode
+# by toggling one circuit at a time at the panel and diffing data = raw[4:-3].
+# Circuits occupy bits in the data: air_blower = byte 0 bit 6, cleaner = byte 1
+# bit 0, spa_mode = byte 1 bit 2, filter_pump = byte 1 bit 4 (set at rest).
+# NOTE: these carry a literal 0x10 data byte, so build Frame(...) directly rather
+# than re-feeding the FrameExtractor (which would de-stuff that 0x10 again).
+STATUS_08_BASELINE = h("10 02 08 02 00 10 00 00 00 2C 10 03")    # pool, blower+cleaner off, pump on
+STATUS_08_SPA_ON = h("10 02 08 02 00 14 00 00 00 30 10 03")      # spa mode on
+STATUS_08_BLOWER_ON = h("10 02 08 02 40 10 00 00 00 6C 10 03")   # air blower on
+STATUS_08_CLEANER_ON = h("10 02 08 02 00 11 00 00 00 2D 10 03")  # cleaner on
+
 ALL_CAPTURED = [
     POLL_PUMP,
     POLL_58,

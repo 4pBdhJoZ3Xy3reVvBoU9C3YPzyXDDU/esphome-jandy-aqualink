@@ -24,3 +24,38 @@ def decode_status(frame: Frame) -> dict:
     ):
         return {"pool_temp": frame.data[_POOL_TEMP_OFFSET]}
     return {}
+
+
+# --- Keypad equipment-LED status (CMD_STATUS 0x02 to the AllButton keypad) ---
+#
+# A registered AllButton keypad receives a steady stream of CMD_STATUS frames
+# carrying the equipment LED bitmap. Each circuit LED occupies bits in the data
+# payload (AqualinkD source/allbutton.c processLEDstate uses 2 bits per LED, an
+# ON bit and an adjacent FLASH bit). The per-panel positions below were pinned
+# live 2026-06-01 by toggling each circuit at the panel and diffing the frame.
+# Only the ON bit is read (FLASH is not needed to tell whether a circuit is on).
+
+KEYPAD_STATUS_CMD = 0x02
+
+# circuit name -> (data byte index, ON-bit index within that byte)
+CIRCUIT_BITS = {
+    "air_blower": (0, 6),
+    "cleaner": (1, 0),
+    "spa_mode": (1, 2),
+    "filter_pump": (1, 4),
+}
+
+
+def decode_keypad_status(frame: Frame, bits: dict = CIRCUIT_BITS) -> dict:
+    """Decode tracked circuit on/off states from a keypad CMD_STATUS frame.
+
+    Returns {} for any non-status frame. Each circuit is the ON bit at its
+    (byte, bit) position in frame.data; a byte past the end reads as off.
+    """
+    if frame.cmd != KEYPAD_STATUS_CMD:
+        return {}
+    data = frame.data
+    out = {}
+    for name, (byte_i, bit_i) in bits.items():
+        out[name] = bool(byte_i < len(data) and (data[byte_i] >> bit_i) & 1)
+    return out
