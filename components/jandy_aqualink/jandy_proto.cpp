@@ -56,6 +56,24 @@ void FrameExtractor::feed(const uint8_t *data, size_t len, std::vector<Frame> &o
   }
 }
 
+// Equipment LED bitmap decode (mirror of jandy/status.py decode_keypad_status).
+// Each circuit's ON bit sits at a (byte,bit) position in the data payload;
+// positions pinned live 2026-06-01 (Discovery). Keep in sync with CIRCUIT_BITS.
+static inline bool status_bit(const Frame &f, uint8_t byte_i, uint8_t bit_i) {
+  return f.data_len() > byte_i && ((f.data()[byte_i] >> bit_i) & 1u);
+}
+
+KeypadStatus decode_keypad_status(const Frame &f) {
+  KeypadStatus s;
+  if (f.cmd() != CMD_STATUS) return s;
+  s.valid = true;
+  s.air_blower = status_bit(f, 0, 6);
+  s.cleaner = status_bit(f, 1, 0);
+  s.spa_mode = status_bit(f, 1, 2);
+  s.filter_pump = status_bit(f, 1, 4);
+  return s;
+}
+
 // --- display helpers (mirror jandy/display.py) ---
 
 static int label_key(const std::string &text) {
@@ -464,6 +482,28 @@ bool selftest(std::string &detail) {
     if (ir.state.has_rpm && ir.state.rpm == 2750 && ir.state.has_watts && ir.state.watts == 1263 &&
         ir.current_page() == 0x2A)
       ok++;
+  }
+
+  // Keypad CMD_STATUS LED decode (same oracle as tests/test_status.py). Frames
+  // are the de-stuffed logical bytes built directly (they carry a literal 0x10,
+  // so they are NOT re-fed through the extractor).
+  {
+    total++;
+    auto lf = [](std::vector<uint8_t> raw) {
+      Frame f;
+      f.raw = std::move(raw);
+      return f;
+    };
+    KeypadStatus base = decode_keypad_status(lf({0x10,0x02,0x08,0x02,0x00,0x10,0x00,0x00,0x00,0x2C,0x10,0x03}));
+    KeypadStatus spa = decode_keypad_status(lf({0x10,0x02,0x08,0x02,0x00,0x14,0x00,0x00,0x00,0x30,0x10,0x03}));
+    KeypadStatus blow = decode_keypad_status(lf({0x10,0x02,0x08,0x02,0x40,0x10,0x00,0x00,0x00,0x6C,0x10,0x03}));
+    KeypadStatus clean = decode_keypad_status(lf({0x10,0x02,0x08,0x02,0x00,0x11,0x00,0x00,0x00,0x2D,0x10,0x03}));
+    bool pass = base.valid && !base.air_blower && !base.cleaner && !base.spa_mode && base.filter_pump &&
+                spa.spa_mode && !spa.air_blower && !spa.cleaner &&
+                blow.air_blower && !blow.spa_mode && !blow.cleaner &&
+                clean.cleaner && !clean.air_blower && !clean.spa_mode;
+    if (pass) ok++;
+    else detail += " STATUS08";
   }
 
   detail = std::to_string(ok) + "/" + std::to_string(total);

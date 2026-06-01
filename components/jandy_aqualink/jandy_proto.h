@@ -156,6 +156,17 @@ struct Decoded {
   int rpm = 0, watts = 0;
 };
 
+// Equipment LED states decoded from the CMD_STATUS (0x02) bitmap the panel sends
+// an AllButton keypad. Per-panel (byte,bit) offsets are the live 2026-06-01
+// Discovery capture (mirror of jandy/status.py CIRCUIT_BITS). The caller gates on
+// dest == keypad address; this only checks cmd == CMD_STATUS. valid is false for a
+// non-status frame.
+struct KeypadStatus {
+  bool valid = false;
+  bool air_blower = false, cleaner = false, spa_mode = false, filter_pump = false;
+};
+KeypadStatus decode_keypad_status(const Frame &f);
+
 // Pairs keypad display labels with the value line that immediately follows, and
 // decodes the binary pool-temp status frame. Feed it checksum-valid frames.
 class Reader {
