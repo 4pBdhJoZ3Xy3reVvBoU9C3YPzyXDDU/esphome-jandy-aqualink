@@ -486,6 +486,25 @@ void JandyAqualink::observe_frame(const jandy::Frame &f) {
     census_.push_back(std::move(e));
   }
 
+  // Equipment LED bitmap to our keypad seat. Log the full frame only when it
+  // changes (the stream is continuous). This is the Discovery capture tool and
+  // the forensic record; decoding is added in Build 2.
+  if (f.dest() == keypad_addr_ && f.cmd() == jandy::CMD_STATUS && f.raw != last_status_raw_) {
+    last_status_raw_ = f.raw;
+    char hex[3 * 32 + 1];
+    static const char *const H = "0123456789ABCDEF";
+    size_t n = f.raw.size() > 32 ? 32 : f.raw.size();
+    size_t hp = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uint8_t b = f.raw[i];
+      hex[hp++] = H[b >> 4];
+      hex[hp++] = H[b & 0x0F];
+      hex[hp++] = ' ';
+    }
+    hex[hp] = '\0';
+    ESP_LOGW(TAG, "STATUS08 change len=%u: %s", static_cast<unsigned>(f.raw.size()), hex);
+  }
+
   // During the survey, surface any pump-addressed frame that carries data (not a
   // bare poll), in case the live RPM is sniffable passively from the 0x60 traffic.
   // Bare polls (cmd 0x00) are frequent and empty, and already show in the census.

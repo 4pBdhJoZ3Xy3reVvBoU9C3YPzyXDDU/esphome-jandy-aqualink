@@ -158,6 +158,9 @@ class JandyAqualink : public Component {
     std::vector<uint8_t> sample;  // first raw frame seen of this type
   };
   std::vector<CensusEntry> census_;
+  // Last raw CMD_STATUS frame seen for our keypad address, so the status-change
+  // logger fires only on a change (the panel streams these continuously).
+  std::vector<uint8_t> last_status_raw_;
   uint32_t last_dump_us_{0};
   int last_air_{-999}, last_pool_{-999}, last_spa_{-999};
 

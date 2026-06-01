@@ -15,7 +15,7 @@
 namespace jandy {
 
 static constexpr uint8_t DLE = 0x10, STX = 0x02, ETX = 0x03, STUFF = 0x00;
-static constexpr uint8_t CMD_POLL = 0x00, CMD_ACK = 0x01, CMD_DISPLAY = 0x25;
+static constexpr uint8_t CMD_POLL = 0x00, CMD_ACK = 0x01, CMD_STATUS = 0x02, CMD_DISPLAY = 0x25;
 
 // Inert presence ACK for AllButton keypad emulation: dest 0x00 (master),
 // cmd 0x01, [ack_type=0x80 (ACK_ALLB_SIM), key=0x00], checksum 0x93. The key
