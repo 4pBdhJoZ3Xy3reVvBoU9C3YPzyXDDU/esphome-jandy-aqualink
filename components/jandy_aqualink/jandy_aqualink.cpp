@@ -489,6 +489,24 @@ void JandyAqualink::log_iaq_frame(const jandy::Frame &f) {
 void JandyAqualink::observe_frame(const jandy::Frame &f) {
   reader_.feed(f);
 
+  // Promiscuous bus capture: log every non-poll frame raw so we can record a real
+  // iAqualink's schedule read/write conversation. Gated off by default (verbose).
+  if (sniff_all_ && f.cmd() != jandy::CMD_POLL) {
+    char hex[3 * 48 + 1];
+    static const char *const H = "0123456789ABCDEF";
+    size_t n = f.raw.size() > 48 ? 48 : f.raw.size();
+    size_t hp = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uint8_t b = f.raw[i];
+      hex[hp++] = H[b >> 4];
+      hex[hp++] = H[b & 0x0F];
+      hex[hp++] = ' ';
+    }
+    hex[hp] = '\0';
+    ESP_LOGW(TAG, "SNIFF d=0x%02X c=0x%02X len=%u: %s", static_cast<unsigned>(f.dest()),
+             static_cast<unsigned>(f.cmd()), static_cast<unsigned>(f.raw.size()), hex);
+  }
+
   uint16_t key = (static_cast<uint16_t>(f.dest()) << 8) | f.cmd();
   bool seen = false;
   for (auto &e : census_) {

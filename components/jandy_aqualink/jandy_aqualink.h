@@ -56,6 +56,11 @@ class JandyAqualink : public Component {
   void set_iaq_presence(bool on);
   bool iaq_presence() const { return iaq_presence_; }
 
+  // Promiscuous bus capture (read-only). When on, observe_frame logs every
+  // non-poll frame on the bus raw, to record how a real iAqualink reads/writes
+  // the panel schedule. Logs only; never transmits. Off by default.
+  void set_sniff_all(bool on) { sniff_all_ = on; }
+
   // Switch the panel to Pool Mode by pressing the iAqualink Spa toggle (keycode
   // 0x12, the home-page Spa button). Heavily gated: requires the master
   // interlock on, iAqualink presence on, and the panel currently in spa mode.
@@ -137,6 +142,7 @@ class JandyAqualink : public Component {
   // iAqualink read state. iaq_presence_ gates whether we answer 0x33 frames.
   uint8_t iaq_addr_{jandy::IAQ_DEV_ID};
   volatile bool iaq_presence_{false};
+  volatile bool sniff_all_{false};  // promiscuous bus capture (read-only diagnostic)
   volatile uint32_t iaq_acks_{0};
 
   // iAqualink home-page decoder (core-1 task) + temperature mirrors. -999 means

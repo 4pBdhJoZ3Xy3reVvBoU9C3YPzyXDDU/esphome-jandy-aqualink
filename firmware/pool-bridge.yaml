@@ -141,6 +141,21 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF   # resumes the watch after an overnight reboot
 
+  # Promiscuous bus capture: when on, log every non-poll frame on the bus raw, so
+  # we can record how a real iAqualink reads/writes the panel's schedule. Read-only
+  # (logs only, transmits nothing). Off by default; it is verbose, so use it only
+  # during a capture window then turn it off.
+  - platform: template
+    name: "Pool Bus Sniff"
+    id: bus_sniff
+    icon: "mdi:ear-hearing"
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - lambda: "id(jandy_comp).set_sniff_all(true);"
+    turn_off_action:
+      - lambda: "id(jandy_comp).set_sniff_all(false);"
+
 button:
   - platform: template
     name: "Pool Keypad Press MENU"
