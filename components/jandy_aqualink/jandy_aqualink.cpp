@@ -460,6 +460,24 @@ void JandyAqualink::log_iaq_frame(const jandy::Frame &f) {
     }
     txt[o] = '\0';
     ESP_LOGI(TAG, "IAQ M%u: %s", static_cast<unsigned>(d[0]), txt);
+  } else {
+    // Any other 0x33 frame type we don't decode yet: dump raw hex so a menu or
+    // settings page that streams its content in an unfamiliar command cannot hide
+    // as "empty". Polls (0x30) and probes (0x00) already returned above, so this
+    // does not spam. Read-only diagnostic.
+    char hex[3 * 40 + 1];
+    static const char *const H = "0123456789ABCDEF";
+    size_t n = f.raw.size() > 40 ? 40 : f.raw.size();
+    size_t hp = 0;
+    for (size_t i = 0; i < n; ++i) {
+      uint8_t b = f.raw[i];
+      hex[hp++] = H[b >> 4];
+      hex[hp++] = H[b & 0x0F];
+      hex[hp++] = ' ';
+    }
+    hex[hp] = '\0';
+    ESP_LOGI(TAG, "IAQ RAW cmd=0x%02X len=%u: %s", static_cast<unsigned>(cmd),
+             static_cast<unsigned>(f.raw.size()), hex);
   }
 }
 
