@@ -1,7 +1,20 @@
 # Bus-driven wipe feasibility: iAquaLink Touch MENU route
 
 Date: 2026-06-01
-Status: findings + recommendation (scoping the "fuller handshake" build)
+Status: CONFIRMED INFEASIBLE via live experiment (see Confirmation). Pivot to the iAquaLink-app method.
+
+## Confirmation (live experiment, 2026-06-01)
+
+Ran the "try harder" experiment: added a catch-all that raw-dumps EVERY 0x33 frame
+type we don't already decode (diagnostic commit `570ea80`), redeployed, and
+re-opened the MENU on a fresh registration. **Positive control passed:** the
+logger caught the panel's startup frame (`IAQ RAW cmd=0x29`) and its identity
+frame (`cmd=0x2D` = "AQUALINK"), proving it surfaces undecoded frames. With that
+proven-complete logger, opening the MENU produced `PAGE MENU(0x0F)` then `PAGE
+END` with **zero frames of any type in between**, while the HOME page immediately
+prior streamed full content. So the MENU is genuinely empty on this panel; it is
+NOT a decode or handshake gap. The Touch-MENU bus-wipe route is conclusively dead.
+(Captures: menu_capture2.log, menu_capture3.log.)
 
 ## Question
 
