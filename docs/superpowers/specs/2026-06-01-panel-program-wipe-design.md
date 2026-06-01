@@ -1,7 +1,12 @@
 # Panel program wipe + handoff to Home Assistant: design
 
 - Date: 2026-06-01
-- Status: Approved by founder 2026-06-01. Ready for implementation plan (a runbook).
+- Status: FALLBACK / safety net. After review, the founder PREFERS the bus
+  reverse-engineering approach (our ESP box reaches the program editor and deletes
+  programs directly, no working iAquaLink required, the way AqualinkD does it),
+  queued as a dedicated NEW session. Use THIS iAquaLink-app method only if the
+  reverse-engineering proves infeasible on this screenless panel, or a fast wipe is
+  ever needed. No urgency: the panel's leftover programs are harmless.
 - Repo: esphome-jandy-aqualink. ESP bridge device `192.168.4.51`.
 - Panel: Jandy AquaLink RS power center (no LCD). Controller: iAquaLink 2.0 (dead WiFi,
   HAS an Ethernet jack, founder believes the unit itself still works).
