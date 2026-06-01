@@ -8,6 +8,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
 #include "jandy_proto.h"
 
 #include "freertos/FreeRTOS.h"
@@ -35,6 +36,10 @@ class JandyAqualink : public Component {
   void set_spa_temp_sensor(sensor::Sensor *s) { spa_temp_sensor_ = s; }
   void set_pump_rpm_sensor(sensor::Sensor *s) { pump_rpm_sensor_ = s; }
   void set_pump_watts_sensor(sensor::Sensor *s) { pump_watts_sensor_ = s; }
+  void set_spa_mode_bs(binary_sensor::BinarySensor *b) { spa_mode_bs_ = b; }
+  void set_air_blower_bs(binary_sensor::BinarySensor *b) { air_blower_bs_ = b; }
+  void set_filter_pump_bs(binary_sensor::BinarySensor *b) { filter_pump_bs_ = b; }
+  void set_cleaner_bs(binary_sensor::BinarySensor *b) { cleaner_bs_ = b; }
 
   // Phase 2 gated keypress controls. Called from core 0 (HA/web/lambda). The
   // master interlock is OFF by default; with it off the device is exactly v1
@@ -103,6 +108,14 @@ class JandyAqualink : public Component {
   sensor::Sensor *spa_temp_sensor_{nullptr};
   sensor::Sensor *pump_rpm_sensor_{nullptr};
   sensor::Sensor *pump_watts_sensor_{nullptr};
+  binary_sensor::BinarySensor *spa_mode_bs_{nullptr};
+  binary_sensor::BinarySensor *air_blower_bs_{nullptr};
+  binary_sensor::BinarySensor *filter_pump_bs_{nullptr};
+  binary_sensor::BinarySensor *cleaner_bs_{nullptr};
+  // Decoded keypad-status circuit states, written by core 1 under mux_, published
+  // by core 0. -1 = not yet known, 0 = off, 1 = on.
+  volatile int8_t cs_spa_{-1}, cs_blower_{-1}, cs_pump_{-1}, cs_cleaner_{-1};
+  int8_t pub_cs_spa_{-2}, pub_cs_blower_{-2}, pub_cs_pump_{-2}, pub_cs_cleaner_{-2};
 
   TaskHandle_t task_{nullptr};
   portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;

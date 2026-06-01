@@ -486,23 +486,44 @@ void JandyAqualink::observe_frame(const jandy::Frame &f) {
     census_.push_back(std::move(e));
   }
 
-  // Equipment LED bitmap to our keypad seat. Log the full frame only when it
-  // changes (the stream is continuous). This is the Discovery capture tool and
-  // the forensic record; decoding is added in Build 2.
-  if (f.dest() == keypad_addr_ && f.cmd() == jandy::CMD_STATUS && f.raw != last_status_raw_) {
-    last_status_raw_ = f.raw;
-    char hex[3 * 32 + 1];
-    static const char *const H = "0123456789ABCDEF";
-    size_t n = f.raw.size() > 32 ? 32 : f.raw.size();
-    size_t hp = 0;
-    for (size_t i = 0; i < n; ++i) {
-      uint8_t b = f.raw[i];
-      hex[hp++] = H[b >> 4];
-      hex[hp++] = H[b & 0x0F];
-      hex[hp++] = ' ';
+  // Equipment LED bitmap to our keypad seat. Log the full frame when it changes
+  // (forensic record), and decode the tracked circuits into shared state for the
+  // binary_sensors, logging each circuit transition. Read-only.
+  if (f.dest() == keypad_addr_ && f.cmd() == jandy::CMD_STATUS) {
+    if (f.raw != last_status_raw_) {
+      last_status_raw_ = f.raw;
+      char hex[3 * 32 + 1];
+      static const char *const H = "0123456789ABCDEF";
+      size_t n = f.raw.size() > 32 ? 32 : f.raw.size();
+      size_t hp = 0;
+      for (size_t i = 0; i < n; ++i) {
+        uint8_t b = f.raw[i];
+        hex[hp++] = H[b >> 4];
+        hex[hp++] = H[b & 0x0F];
+        hex[hp++] = ' ';
+      }
+      hex[hp] = '\0';
+      ESP_LOGW(TAG, "STATUS08 change len=%u: %s", static_cast<unsigned>(f.raw.size()), hex);
     }
-    hex[hp] = '\0';
-    ESP_LOGW(TAG, "STATUS08 change len=%u: %s", static_cast<unsigned>(f.raw.size()), hex);
+    jandy::KeypadStatus ks = jandy::decode_keypad_status(f);
+    if (ks.valid) {
+      int8_t spa = ks.spa_mode, blow = ks.air_blower, pump = ks.filter_pump, clean = ks.cleaner;
+      bool spa_ch, blow_ch, pump_ch, clean_ch;
+      portENTER_CRITICAL(&mux_);
+      spa_ch = spa != cs_spa_;
+      blow_ch = blow != cs_blower_;
+      pump_ch = pump != cs_pump_;
+      clean_ch = clean != cs_cleaner_;
+      cs_spa_ = spa;
+      cs_blower_ = blow;
+      cs_pump_ = pump;
+      cs_cleaner_ = clean;
+      portEXIT_CRITICAL(&mux_);
+      if (spa_ch) ESP_LOGW(TAG, "STATUS CHANGE: spa_mode -> %d", spa);
+      if (blow_ch) ESP_LOGW(TAG, "STATUS CHANGE: air_blower -> %d", blow);
+      if (pump_ch) ESP_LOGW(TAG, "STATUS CHANGE: filter_pump -> %d", pump);
+      if (clean_ch) ESP_LOGW(TAG, "STATUS CHANGE: cleaner -> %d", clean);
+    }
   }
 
   // During the survey, surface any pump-addressed frame that carries data (not a
@@ -601,6 +622,32 @@ void JandyAqualink::loop() {
   if (pump_watts_sensor_ && watts != -1 && watts != pub_watts_) {
     pump_watts_sensor_->publish_state(watts);
     pub_watts_ = watts;
+  }
+
+  {
+    int8_t spa_s, blow_s, pump_s, clean_s;
+    portENTER_CRITICAL(&mux_);
+    spa_s = cs_spa_;
+    blow_s = cs_blower_;
+    pump_s = cs_pump_;
+    clean_s = cs_cleaner_;
+    portEXIT_CRITICAL(&mux_);
+    if (spa_mode_bs_ && spa_s >= 0 && spa_s != pub_cs_spa_) {
+      spa_mode_bs_->publish_state(spa_s != 0);
+      pub_cs_spa_ = spa_s;
+    }
+    if (air_blower_bs_ && blow_s >= 0 && blow_s != pub_cs_blower_) {
+      air_blower_bs_->publish_state(blow_s != 0);
+      pub_cs_blower_ = blow_s;
+    }
+    if (filter_pump_bs_ && pump_s >= 0 && pump_s != pub_cs_pump_) {
+      filter_pump_bs_->publish_state(pump_s != 0);
+      pub_cs_pump_ = pump_s;
+    }
+    if (cleaner_bs_ && clean_s >= 0 && clean_s != pub_cs_cleaner_) {
+      cleaner_bs_->publish_state(clean_s != 0);
+      pub_cs_cleaner_ = clean_s;
+    }
   }
 
   if (polls_sensor_ && polls != pub_polls_) {

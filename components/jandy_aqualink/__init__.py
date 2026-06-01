@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import sensor
+from esphome.components import binary_sensor, sensor
 from esphome.const import (
     CONF_ID,
     ENTITY_CATEGORY_DIAGNOSTIC,
@@ -8,7 +8,7 @@ from esphome.const import (
     STATE_CLASS_TOTAL_INCREASING,
 )
 
-AUTO_LOAD = ["sensor", "number"]
+AUTO_LOAD = ["sensor", "number", "binary_sensor"]
 
 jandy_ns = cg.esphome_ns.namespace("jandy_aqualink")
 JandyAqualink = jandy_ns.class_("JandyAqualink", cg.Component)
@@ -25,6 +25,10 @@ CONF_POOL_TEMP = "pool_temp"
 CONF_SPA_TEMP = "spa_temp"
 CONF_PUMP_RPM = "pump_rpm"
 CONF_PUMP_WATTS = "pump_watts"
+CONF_SPA_MODE = "spa_mode"
+CONF_AIR_BLOWER = "air_blower"
+CONF_FILTER_PUMP_STATE = "filter_pump_state"
+CONF_CLEANER_STATE = "cleaner_state"
 
 
 def _temp_sensor():
@@ -77,6 +81,20 @@ CONFIG_SCHEMA = cv.Schema(
             state_class=STATE_CLASS_MEASUREMENT,
             icon="mdi:flash",
         ),
+        cv.Optional(CONF_SPA_MODE): binary_sensor.binary_sensor_schema(
+            icon="mdi:hot-tub",
+        ),
+        cv.Optional(CONF_AIR_BLOWER): binary_sensor.binary_sensor_schema(
+            icon="mdi:weather-windy",
+        ),
+        cv.Optional(CONF_FILTER_PUMP_STATE): binary_sensor.binary_sensor_schema(
+            device_class="running",
+            icon="mdi:pump",
+        ),
+        cv.Optional(CONF_CLEANER_STATE): binary_sensor.binary_sensor_schema(
+            device_class="running",
+            icon="mdi:robot-vacuum",
+        ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -114,3 +132,15 @@ async def to_code(config):
     if CONF_PUMP_WATTS in config:
         s = await sensor.new_sensor(config[CONF_PUMP_WATTS])
         cg.add(var.set_pump_watts_sensor(s))
+    if CONF_SPA_MODE in config:
+        b = await binary_sensor.new_binary_sensor(config[CONF_SPA_MODE])
+        cg.add(var.set_spa_mode_bs(b))
+    if CONF_AIR_BLOWER in config:
+        b = await binary_sensor.new_binary_sensor(config[CONF_AIR_BLOWER])
+        cg.add(var.set_air_blower_bs(b))
+    if CONF_FILTER_PUMP_STATE in config:
+        b = await binary_sensor.new_binary_sensor(config[CONF_FILTER_PUMP_STATE])
+        cg.add(var.set_filter_pump_bs(b))
+    if CONF_CLEANER_STATE in config:
+        b = await binary_sensor.new_binary_sensor(config[CONF_CLEANER_STATE])
+        cg.add(var.set_cleaner_bs(b))

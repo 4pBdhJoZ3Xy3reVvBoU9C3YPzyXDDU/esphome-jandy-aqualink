@@ -80,6 +80,17 @@ jandy_aqualink:
     name: Pool Pump Speed
   pump_watts:
     name: Pool Pump Watts
+  # Equipment on/off decoded from the panel's keypad status bitmap (the inert
+  # AllButton seat, address 0x08). Read-only; updates continuously as the panel
+  # changes equipment. Bit positions pinned live 2026-06-01 (see docs/).
+  spa_mode:
+    name: Pool Spa Mode
+  air_blower:
+    name: Pool Air Blower (status)
+  filter_pump_state:
+    name: Pool Filter Pump (status)
+  cleaner_state:
+    name: Pool Cleaner (status)
 
 # --- Phase 2 gated keypress controls ---
 # Reading temperatures needs the panel to redraw its display, which it only does
