@@ -275,10 +275,12 @@ void JandyAqualink::iaq_nav(uint8_t key) {
 }
 
 void JandyAqualink::read_pump_speed() {
-  if (!interlock_) {
-    ESP_LOGW(TAG, "read pump speed REFUSED: safety interlock is OFF");
-    return;
-  }
+  // View-only: gated by iAqualink presence ONLY, deliberately not the control
+  // interlock, so an auto-refresh timer can map the panel's schedule without
+  // leaving control armed unattended. This sends only view-only navigation
+  // (STATUS 0x06, then HOME 0x01 via the core-1 auto-return) and never an
+  // equipment key. Every WRITE path (set_pump_rpm, iaq_press, iaq_nav, arm_key,
+  // request_pool_mode) keeps its interlock_ gate.
   if (!iaq_presence_) {
     ESP_LOGW(TAG, "read pump speed REFUSED: iAqualink presence is OFF");
     return;

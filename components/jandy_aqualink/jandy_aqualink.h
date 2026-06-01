@@ -71,7 +71,8 @@ class JandyAqualink : public Component {
   void iaq_nav(uint8_t key);
 
   // Briefly view the STATUS page to read pump RPM/watts, then return to HOME so
-  // temperatures keep updating. Gated by the master interlock + iAqualink presence.
+  // temperatures keep updating. View-only: gated by iAqualink presence only, NOT
+  // the control interlock, so an auto-refresh timer can run it unattended.
   void read_pump_speed();
 
   // Set the filter pump speed (RPM) from HA. Gated by the master interlock +

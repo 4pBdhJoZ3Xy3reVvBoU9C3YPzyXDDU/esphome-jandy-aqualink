@@ -121,6 +121,15 @@ switch:
     turn_off_action:
       - lambda: "id(jandy_comp).set_iaq_presence(false);"
 
+  # Auto-refresh driver: when on, a 15-min interval reads the pump speed so HA
+  # history captures the panel's stored schedule. View-only; off by default.
+  - platform: template
+    name: "Pool Pump Auto-Refresh"
+    id: pump_autorefresh
+    icon: "mdi:timer-refresh"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF   # resumes the watch after an overnight reboot
+
 button:
   - platform: template
     name: "Pool Keypad Press MENU"
@@ -268,6 +277,17 @@ number:
     optimistic: true
     set_action:
       - lambda: "id(jandy_comp).set_pump_rpm((uint16_t) x);"
+
+# When Auto-Refresh is on AND iAqualink presence is on, read the pump speed every
+# 15 minutes. read_pump_speed() is view-only (STATUS then auto-HOME); it actuates
+# nothing. The presence check here only avoids a REFUSED log when presence is off.
+interval:
+  - interval: 15min
+    then:
+      - lambda: |-
+          if (id(pump_autorefresh).state && id(iaq_presence).state) {
+            id(jandy_comp).read_pump_speed();
+          }
 
 # Diagnostics (unchanged from the bridge build).
 sensor:
