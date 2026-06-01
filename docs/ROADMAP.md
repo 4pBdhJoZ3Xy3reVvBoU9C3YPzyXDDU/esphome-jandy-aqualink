@@ -73,7 +73,8 @@ this needs a small per-panel mapping config.
 
 SHIPPED and live-tested: keypad presence (v1), temps via 0x33 emulation, home
 controls (filter pump, pool light, cleaner, air blower, pool mode), pump speed
-READ (Session 4) and SET (Session 6). Pump SET was tuned live: the salt cell
+READ (Session 4), SET (Session 6), and a timed auto-refresh schedule-watch
+(Session 7). Pump SET was tuned live: the salt cell
 flow floor is ~1850 RPM, so presets are Night 1100 / Low 2000 / Normal 2750 /
 High 3200. Resting state safe (control interlock OFF, presence ON).
 
@@ -81,9 +82,11 @@ Each remaining session has a self-contained, paste-ready kickoff doc. Order is
 deliberate (read before write, low-stakes before high-stakes); 7 and 8 are
 independent and can swap.
 
-- **Session 7** `SESSION-7-schedule-watch-kickoff.md` — un-gate the view-only
-  pump read from the control interlock, add a timed auto-refresh, watch the
-  panel's stored schedule. Prerequisite for the schedule decision.
+- **Session 7** `SESSION-7-schedule-watch-kickoff.md` — SHIPPED 2026-05-31
+  (commit `2fbe6c5`). Un-gated the view-only pump read from the control interlock
+  (presence-only now) and added a "Pool Pump Auto-Refresh" switch + 15-min
+  interval. The watch is running; next session reads the ~24h `Pool Pump Speed`
+  history to map the panel's stored schedule, then makes the Session 10 decision.
 - **Session 8** `SESSION-8-easy-toggles-kickoff.md` — spa light / aux /
   sprinklers DEVICES-page toggles. Low-stakes; exercises the page-context guard.
 - **Session 9** `SESSION-9-heaters-kickoff.md` — pool + spa heat on/off +
