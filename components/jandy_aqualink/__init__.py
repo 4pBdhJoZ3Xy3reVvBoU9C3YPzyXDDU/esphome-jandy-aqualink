@@ -101,7 +101,7 @@ CONFIG_SCHEMA = cv.Schema(
             icon="mdi:radiator",
         ),
         cv.Optional(CONF_SPA_HEAT_ENABLED): binary_sensor.binary_sensor_schema(
-            icon="mdi:hot-tub",
+            icon="mdi:fire",
         ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
