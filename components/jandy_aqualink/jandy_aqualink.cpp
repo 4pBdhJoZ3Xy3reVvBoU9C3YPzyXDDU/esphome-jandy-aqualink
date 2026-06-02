@@ -145,6 +145,27 @@ void JandyAqualink::task_loop() {
           portEXIT_CRITICAL(&mux_);
           continue;  // this 0x33 frame fully handled by the toggle sequence
         }
+
+        // The heater sequence owns the iAq reply while active (mutually exclusive
+        // with the set + toggle sequences). Same shape; the key goes out on HOME.
+        int heater_step;
+        portENTER_CRITICAL(&mux_);
+        heater_step = iaq_heater_step_;
+        portEXIT_CRITICAL(&mux_);
+        if (heater_step != 0) {
+          if (f.cmd() == 0x30) {
+            advance_heater_sequence_();
+          } else {
+            send_iaq_ack_(0x00);
+          }
+          iaq_reader_.feed(f);
+          portENTER_CRITICAL(&mux_);
+          iaq_current_page_ = iaq_reader_.current_page();
+          iaq_water_mode_ = iaq_reader_.water_mode();
+          frames_++;
+          portEXIT_CRITICAL(&mux_);
+          continue;  // this 0x33 frame fully handled by the heater sequence
+        }
         // iAqualink: the panel sends its slot one frame at a time and waits for
         // an ACK before the next, so we reply in-slot to every 0x33 frame. The
         // ACK is inert (read-only) unless a key is armed AND this is the poll
@@ -216,6 +237,8 @@ void JandyAqualink::set_interlock(bool on) {
     iaq_set_step_ = 0;     // also abort any in-progress pump-set sequence
     iaq_toggle_step_ = 0;  // and any in-progress device-toggle sequence
     iaq_toggle_key_ = -1;
+    iaq_heater_step_ = 0;  // and any in-progress heater sequence
+    iaq_heater_key_ = -1;
     iaq_return_home_ = false;
   }
   portEXIT_CRITICAL(&mux_);
@@ -328,7 +351,7 @@ void JandyAqualink::set_pump_rpm(uint16_t rpm) {
   }
   uint16_t clamped = jandy::rpm_check(rpm);
   portENTER_CRITICAL(&mux_);
-  if (iaq_toggle_step_ != 0) {  // one write-sequence at a time (mirror of press_device_toggle)
+  if (iaq_toggle_step_ != 0 || iaq_heater_step_ != 0) {  // one write-sequence at a time
     portEXIT_CRITICAL(&mux_);
     ESP_LOGW(TAG, "set_pump_rpm REFUSED: a device-toggle sequence is in progress (rpm=%u)", clamped);
     return;
@@ -353,7 +376,7 @@ void JandyAqualink::press_device_toggle(uint8_t keycode) {
     return;
   }
   portENTER_CRITICAL(&mux_);
-  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0) {  // one write-sequence at a time
+  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0) {  // one write-sequence at a time
     portEXIT_CRITICAL(&mux_);
     ESP_LOGW(TAG, "device toggle REFUSED: another sequence is in progress (key=0x%02X)", keycode);
     return;
@@ -362,6 +385,40 @@ void JandyAqualink::press_device_toggle(uint8_t keycode) {
   iaq_toggle_step_ = 1;  // kick off the sequence on the next poll
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "device toggle: start sequence -> key 0x%02X", keycode);
+}
+
+void JandyAqualink::press_heater(uint8_t keycode) {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "heater REFUSED: safety interlock is OFF (key=0x%02X)", keycode);
+    return;
+  }
+  if (!iaq_presence_) {
+    ESP_LOGW(TAG, "heater REFUSED: iAqualink presence is OFF (key=0x%02X)", keycode);
+    return;
+  }
+  if (!jandy::is_heater_key(keycode)) {
+    ESP_LOGW(TAG, "heater REFUSED: key 0x%02X is not a heater key", keycode);
+    return;
+  }
+  int wm;
+  portENTER_CRITICAL(&mux_);
+  wm = iaq_water_mode_;
+  portEXIT_CRITICAL(&mux_);
+  // Spa Heat must never be enabled outside spa mode (Pool Heat is allowed any mode).
+  if (keycode == jandy::KEY_IAQ_HOME_SPA_HEAT && wm != jandy::WATER_MODE_SPA) {
+    ESP_LOGW(TAG, "heater REFUSED: Spa Heat needs spa mode (water_mode=%d)", wm);
+    return;
+  }
+  portENTER_CRITICAL(&mux_);
+  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0) {
+    portEXIT_CRITICAL(&mux_);
+    ESP_LOGW(TAG, "heater REFUSED: another sequence is in progress (key=0x%02X)", keycode);
+    return;
+  }
+  iaq_heater_key_ = keycode;
+  iaq_heater_step_ = 1;  // kick off the sequence on the next poll
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "heater: start sequence -> key 0x%02X", keycode);
 }
 
 // core-1: write a 9-byte iAqualink ACK carrying `key` (0x00 = inert presence).
@@ -515,6 +572,52 @@ void JandyAqualink::advance_toggle_sequence_() {
     default:
       iaq_toggle_step_ = 0;
       iaq_toggle_key_ = -1;
+      send_iaq_ack_(0x00);
+      break;
+  }
+}
+
+// core-1: advance one step of the gated heater on/off sequence. Called from the iAq
+// branch of task_loop on each poll (cmd 0x30) while iaq_heater_step_ != 0. SAFETY: the
+// heater keycode is sent ONLY when the decoder confirms page == HOME (0x01) AND the
+// full gate (heater_enable_allowed: HOME + spa-mode for Spa Heat) re-passes at the
+// transmit point; 0x13/0x14 are other equipment on other pages. Interlock off aborts.
+void JandyAqualink::advance_heater_sequence_() {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "heater aborted at step %d: interlock OFF", iaq_heater_step_);
+    iaq_heater_step_ = 0;
+    iaq_heater_key_ = -1;
+    send_iaq_ack_(0x00);
+    return;
+  }
+  int page = iaq_reader_.current_page();
+  int wm = iaq_reader_.water_mode();
+  switch (iaq_heater_step_) {
+    case 1:  // ensure HOME, then send the heater key on HOME (re-checking the gate)
+      if (page == jandy::IAQ_PAGE_HOME) {
+        if (jandy::heater_enable_allowed(static_cast<uint8_t>(iaq_heater_key_), page, wm)) {
+          send_iaq_ack_(static_cast<uint8_t>(iaq_heater_key_));
+          ESP_LOGW(TAG, "heater: pressed 0x%02X on HOME", iaq_heater_key_);
+          iaq_heater_step_ = 2;
+        } else {
+          ESP_LOGW(TAG, "heater aborted: gate failed at transmit (page=0x%02X wm=%d)", page, wm);
+          iaq_heater_step_ = 0;
+          iaq_heater_key_ = -1;
+          send_iaq_ack_(0x00);
+        }
+      } else {
+        send_iaq_ack_(jandy::KEY_IAQT_HOME);  // not on HOME yet, navigate there
+      }
+      break;
+    case 2:  // pressed -> done (we stay on HOME, temps keep reading)
+      ESP_LOGW(TAG, "heater sequence complete (key 0x%02X)", iaq_heater_key_);
+      iaq_heater_step_ = 0;
+      iaq_heater_key_ = -1;
+      send_iaq_ack_(0x00);
+      break;
+    default:
+      iaq_heater_step_ = 0;
+      iaq_heater_key_ = -1;
       send_iaq_ack_(0x00);
       break;
   }

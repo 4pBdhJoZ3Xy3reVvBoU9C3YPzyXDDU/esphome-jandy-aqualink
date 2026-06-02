@@ -97,6 +97,13 @@ class JandyAqualink : public Component {
   // while the panel is confirmed on the DEVICES page. One write-sequence at a time.
   void press_device_toggle(uint8_t keycode);
 
+  // Enable/disable a heater (Pool Heat 0x13 / Spa Heat 0x14) from HA. Gated by the
+  // master interlock + iAqualink presence + a HOME-page-only guard; Spa Heat also
+  // refuses unless the panel is in spa mode. Runs a short sequence (ensure HOME,
+  // re-check the gate, send ONE keycode on HOME). Toggles the panel's heat enable;
+  // the panel then runs the thermostat to the setpoint. One write-sequence at a time.
+  void press_heater(uint8_t keycode);
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
@@ -106,6 +113,7 @@ class JandyAqualink : public Component {
   void send_iaq_ack_(uint8_t key);   // core-1: write an iAqualink ack carrying `key`
   void advance_set_sequence_();      // core-1: drive the pump-set sequence on each poll
   void advance_toggle_sequence_();   // core-1: drive the device-toggle sequence on each poll
+  void advance_heater_sequence_();   // core-1: drive the heater on/off sequence on each poll
   void send_vsp_set_(uint16_t rpm);  // core-1: transmit the 0x24 value frame
 
   int tx_pin_{19};
@@ -182,6 +190,13 @@ class JandyAqualink : public Component {
   // task as it advances.
   volatile int iaq_toggle_step_{0};
   volatile int iaq_toggle_key_{-1};
+
+  // Heater on/off sequence (multi-step, HOME-page). 0 = idle, 1..2 = steps.
+  // iaq_heater_key_ is the allowlisted heater keycode to send on HOME. Mutually
+  // exclusive with the pump-set and device-toggle sequences. Written by press_heater
+  // (core 0) under mux_ and by the core-1 task as it advances.
+  volatile int iaq_heater_step_{0};
+  volatile int iaq_heater_key_{-1};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records
