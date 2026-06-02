@@ -400,13 +400,16 @@ void JandyAqualink::press_heater(uint8_t keycode) {
     ESP_LOGW(TAG, "heater REFUSED: key 0x%02X is not a heater key", keycode);
     return;
   }
-  int wm;
-  portENTER_CRITICAL(&mux_);
-  wm = iaq_water_mode_;
-  portEXIT_CRITICAL(&mux_);
   // Spa Heat must never be enabled outside spa mode (Pool Heat is allowed any mode).
-  if (keycode == jandy::KEY_IAQ_HOME_SPA_HEAT && wm != jandy::WATER_MODE_SPA) {
-    ESP_LOGW(TAG, "heater REFUSED: Spa Heat needs spa mode (water_mode=%d)", wm);
+  // Gate on the reliable 0x08 keypad-status spa bit (cs_spa_), which the panel sends
+  // continuously, NOT the iAqualink home label (iaq_water_mode_), which only re-sends
+  // intermittently and reads "unknown" between updates (caused a spurious refusal).
+  int8_t spa;
+  portENTER_CRITICAL(&mux_);
+  spa = cs_spa_;
+  portEXIT_CRITICAL(&mux_);
+  if (keycode == jandy::KEY_IAQ_HOME_SPA_HEAT && spa != 1) {
+    ESP_LOGW(TAG, "heater REFUSED: Spa Heat needs spa mode (spa_bit=%d)", spa);
     return;
   }
   portENTER_CRITICAL(&mux_);
@@ -591,7 +594,9 @@ void JandyAqualink::advance_heater_sequence_() {
     return;
   }
   int page = iaq_reader_.current_page();
-  int wm = iaq_reader_.water_mode();
+  // Spa-mode for the gate comes from the reliable 0x08 spa bit (cs_spa_, owned by
+  // this core-1 task), not the intermittent iAqualink home label; matches press_heater.
+  int wm = (cs_spa_ == 1) ? jandy::WATER_MODE_SPA : 2;
   switch (iaq_heater_step_) {
     case 1:  // ensure HOME, then send the heater key on HOME (re-checking the gate)
       if (page == jandy::IAQ_PAGE_HOME) {
