@@ -138,6 +138,7 @@ class IaqReader:
             elif self._page_type in (0x2A, 0x5B):  # STATUS2 / STATUS
                 self._commit_status()
             self._lines = {}
+            self._btn_state = {}
 
     def _commit_home(self):
         for idx, text in self._lines.items():

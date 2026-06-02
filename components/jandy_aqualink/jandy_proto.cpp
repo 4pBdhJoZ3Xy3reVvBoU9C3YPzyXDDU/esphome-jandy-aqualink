@@ -190,6 +190,7 @@ void IaqReader::feed(const Frame &f) {
     if (page_type_ == 0x01) commit_home();  // 0x01 = HOME page
     else if (page_type_ == 0x2A || page_type_ == 0x5B) commit_status();  // STATUS2 / STATUS
     for (int i = 0; i < MAX_LINES; ++i) present_[i] = false;
+    for (int i = 0; i < MAX_LINES; ++i) btn_present_[i] = false;
   }
 }
 
@@ -217,8 +218,14 @@ void IaqReader::commit_home() {
     }
   }
   // HOME heater buttons: index 2 Pool Heat, index 3 Spa Heat; state 3 = on.
-  if (btn_present_[BTN_POOL_HEAT]) { pool_heat_enabled_ = (btn_state_[BTN_POOL_HEAT] == 3); has_pool_heat_ = true; }
-  if (btn_present_[BTN_SPA_HEAT]) { spa_heat_enabled_ = (btn_state_[BTN_SPA_HEAT] == 3); has_spa_heat_ = true; }
+  if (btn_present_[BTN_POOL_HEAT]) {
+    pool_heat_enabled_ = (btn_state_[BTN_POOL_HEAT] == 3);
+    has_pool_heat_ = true;
+  }
+  if (btn_present_[BTN_SPA_HEAT]) {
+    spa_heat_enabled_ = (btn_state_[BTN_SPA_HEAT] == 3);
+    has_spa_heat_ = true;
+  }
 }
 
 void IaqReader::commit_status() {
