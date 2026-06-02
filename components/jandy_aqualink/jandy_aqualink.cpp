@@ -124,6 +124,27 @@ void JandyAqualink::task_loop() {
           portEXIT_CRITICAL(&mux_);
           continue;  // this 0x33 frame fully handled by the set sequence
         }
+
+        // The device-toggle sequence owns the iAq reply while active (mutually
+        // exclusive with the set sequence; press_device_toggle refuses if either
+        // is running). Mirror the set-sequence handling, with no 0x24 value step.
+        int toggle_step;
+        portENTER_CRITICAL(&mux_);
+        toggle_step = iaq_toggle_step_;
+        portEXIT_CRITICAL(&mux_);
+        if (toggle_step != 0) {
+          if (f.cmd() == 0x30) {
+            advance_toggle_sequence_();  // sends one ack (nav key / toggle / inert), advances
+          } else {
+            send_iaq_ack_(0x00);  // page frames during the sequence: stay inert
+          }
+          iaq_reader_.feed(f);
+          portENTER_CRITICAL(&mux_);
+          iaq_current_page_ = iaq_reader_.current_page();
+          frames_++;
+          portEXIT_CRITICAL(&mux_);
+          continue;  // this 0x33 frame fully handled by the toggle sequence
+        }
         // iAqualink: the panel sends its slot one frame at a time and waits for
         // an ACK before the next, so we reply in-slot to every 0x33 frame. The
         // ACK is inert (read-only) unless a key is armed AND this is the poll
@@ -193,6 +214,8 @@ void JandyAqualink::set_interlock(bool on) {
     armed_key_ = -1;       // hard abort: clear any armed key, revert to inert
     iaq_armed_key_ = -1;
     iaq_set_step_ = 0;     // also abort any in-progress pump-set sequence
+    iaq_toggle_step_ = 0;  // and any in-progress device-toggle sequence
+    iaq_toggle_key_ = -1;
     iaq_return_home_ = false;
   }
   portEXIT_CRITICAL(&mux_);
@@ -305,10 +328,40 @@ void JandyAqualink::set_pump_rpm(uint16_t rpm) {
   }
   uint16_t clamped = jandy::rpm_check(rpm);
   portENTER_CRITICAL(&mux_);
+  if (iaq_toggle_step_ != 0) {  // one write-sequence at a time (mirror of press_device_toggle)
+    portEXIT_CRITICAL(&mux_);
+    ESP_LOGW(TAG, "set_pump_rpm REFUSED: a device-toggle sequence is in progress (rpm=%u)", clamped);
+    return;
+  }
   iaq_set_rpm_ = clamped;
   iaq_set_step_ = 1;  // kick off the sequence on the next poll
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "set_pump_rpm: start sequence -> %u RPM (requested %u)", clamped, rpm);
+}
+
+void JandyAqualink::press_device_toggle(uint8_t keycode) {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "device toggle REFUSED: safety interlock is OFF (key=0x%02X)", keycode);
+    return;
+  }
+  if (!iaq_presence_) {
+    ESP_LOGW(TAG, "device toggle REFUSED: iAqualink presence is OFF (key=0x%02X)", keycode);
+    return;
+  }
+  if (!jandy::is_device_toggle_allowed(keycode)) {
+    ESP_LOGW(TAG, "device toggle REFUSED: key 0x%02X not in the DEVICES-toggle allowlist", keycode);
+    return;
+  }
+  portENTER_CRITICAL(&mux_);
+  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0) {  // one write-sequence at a time
+    portEXIT_CRITICAL(&mux_);
+    ESP_LOGW(TAG, "device toggle REFUSED: another sequence is in progress (key=0x%02X)", keycode);
+    return;
+  }
+  iaq_toggle_key_ = keycode;
+  iaq_toggle_step_ = 1;  // kick off the sequence on the next poll
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "device toggle: start sequence -> key 0x%02X", keycode);
 }
 
 // core-1: write a 9-byte iAqualink ACK carrying `key` (0x00 = inert presence).
@@ -399,6 +452,69 @@ void JandyAqualink::advance_set_sequence_() {
       break;
     default:
       iaq_set_step_ = 0;
+      send_iaq_ack_(0x00);
+      break;
+  }
+}
+
+// core-1: advance one step of the gated device-toggle sequence. Called from the
+// iAq branch of task_loop on each poll (cmd 0x30) while iaq_toggle_step_ != 0.
+// Mirrors the pump-set nav (HOME, Other Devices, confirm DEVICES) but the terminal
+// action is a single toggle press, not a value-set. SAFETY: the toggle keycode is
+// sent ONLY when the decoder confirms page == DEVICES (0x36) AND the key is still
+// in the allowlist; the same byte is other equipment on HOME. Interlock off aborts.
+void JandyAqualink::advance_toggle_sequence_() {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "device toggle aborted at step %d: interlock OFF", iaq_toggle_step_);
+    iaq_toggle_step_ = 0;
+    iaq_toggle_key_ = -1;
+    send_iaq_ack_(0x00);
+    return;
+  }
+  int page = iaq_reader_.current_page();
+  switch (iaq_toggle_step_) {
+    case 1:  // go HOME first (deterministic starting point)
+      send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      iaq_toggle_step_ = 2;
+      break;
+    case 2:  // on HOME -> open Other Devices; else retry HOME
+      if (page == jandy::IAQ_PAGE_HOME) {
+        send_iaq_ack_(jandy::KEY_IAQT_OTHER_DEVICES);
+        iaq_toggle_step_ = 3;
+      } else {
+        send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      }
+      break;
+    case 3:  // on DEVICES -> press the toggle. SAFETY: only on DEVICES (0x36) AND
+             // only an allowlisted key, both re-checked at this transmit point.
+      if (page == jandy::IAQ_PAGE_DEVICES &&
+          jandy::is_device_toggle_allowed(static_cast<uint8_t>(iaq_toggle_key_))) {
+        send_iaq_ack_(static_cast<uint8_t>(iaq_toggle_key_));
+        ESP_LOGW(TAG, "device toggle: pressed 0x%02X on DEVICES", iaq_toggle_key_);
+        iaq_toggle_step_ = 4;
+      } else if (page == jandy::IAQ_PAGE_HOME) {
+        send_iaq_ack_(jandy::KEY_IAQT_OTHER_DEVICES);  // not there yet, retry nav
+      } else {
+        send_iaq_ack_(0x00);  // wait for the panel to land on DEVICES
+      }
+      break;
+    case 4:  // pressed -> return HOME so temps + the Session 7 auto-refresh resume
+      send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      iaq_toggle_step_ = 5;
+      break;
+    case 5:  // on HOME -> done
+      if (page == jandy::IAQ_PAGE_HOME) {
+        ESP_LOGW(TAG, "device toggle sequence complete (key 0x%02X)", iaq_toggle_key_);
+        iaq_toggle_step_ = 0;
+        iaq_toggle_key_ = -1;
+        send_iaq_ack_(0x00);
+      } else {
+        send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      }
+      break;
+    default:
+      iaq_toggle_step_ = 0;
+      iaq_toggle_key_ = -1;
       send_iaq_ack_(0x00);
       break;
   }

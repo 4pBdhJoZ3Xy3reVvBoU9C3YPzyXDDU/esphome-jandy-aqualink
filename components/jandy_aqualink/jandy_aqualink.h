@@ -90,6 +90,13 @@ class JandyAqualink : public Component {
   // a multi-step, page-confirmed sequence run by the core-1 task. One at a time.
   void set_pump_rpm(uint16_t rpm);
 
+  // Toggle one allowlisted DEVICES-page circuit (Spa Light 0x19, Extra Aux 0x1d,
+  // Sprinklers 0x1e). Gated by the master interlock + iAqualink presence + the
+  // device-toggle allowlist. Runs a short page-confirmed sequence (nav to DEVICES,
+  // confirm the page, send ONE keycode, return HOME); the keycode is sent only
+  // while the panel is confirmed on the DEVICES page. One write-sequence at a time.
+  void press_device_toggle(uint8_t keycode);
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
@@ -98,6 +105,7 @@ class JandyAqualink : public Component {
   void log_iaq_frame(const jandy::Frame &f);
   void send_iaq_ack_(uint8_t key);   // core-1: write an iAqualink ack carrying `key`
   void advance_set_sequence_();      // core-1: drive the pump-set sequence on each poll
+  void advance_toggle_sequence_();   // core-1: drive the device-toggle sequence on each poll
   void send_vsp_set_(uint16_t rpm);  // core-1: transmit the 0x24 value frame
 
   int tx_pin_{19};
@@ -166,6 +174,14 @@ class JandyAqualink : public Component {
   // mux_ and by the core-1 task as it advances.
   volatile int iaq_set_step_{0};
   volatile int iaq_set_rpm_{0};
+
+  // DEVICES-page toggle sequence (multi-step, page-driven). 0 = idle, 1..5 = steps.
+  // iaq_toggle_key_ is the allowlisted keycode to send on DEVICES. Mutually
+  // exclusive with the pump-set sequence (each entry point refuses if the other is
+  // active). Written by press_device_toggle (core 0) under mux_ and by the core-1
+  // task as it advances.
+  volatile int iaq_toggle_step_{0};
+  volatile int iaq_toggle_key_{-1};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records
