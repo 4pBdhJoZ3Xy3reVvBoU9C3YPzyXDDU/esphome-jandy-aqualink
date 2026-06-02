@@ -355,3 +355,73 @@ def heater_enable_allowed(key: int, current_page: int, water_mode: int) -> bool:
     if key == KEY_IAQ_HOME_SPA_HEAT and water_mode != WATER_MODE_SPA:
         return False
     return True
+
+
+# --- Heater temperature setpoint (SET_TEMP page) ----------------------------
+#
+# Setting a heater target reuses the pump value-set handshake (the 0x80 control
+# request then the 0x24 value frame), confirmed against AqualinkD
+# queue_iaqt_control_command, which uses the SAME num2iaqtRSset encoder for both
+# pump RPM and heater setpoint. The captured "Set Temp (pool)" frames in
+# AqualinkD iaqtouch.h are the oracle (50F, 100F reproduce byte-for-byte).
+#
+# PAGE-SCOPED KEYCODES (the central safety trap): 0x14 is Spa Heat on HOME, Pool
+# Heat on DEVICES, and Set Temp on MENU. Every keycode is gated to its page.
+IAQ_PAGE_SET_TEMP = 0x39
+IAQ_PAGE_MENU = 0x0F
+
+# DEVICES-page heat items (keycode = 0x11 + slot): slot 3 Pool Heat, slot 4 Spa
+# Heat. Pressed ONLY while page == DEVICES. The candidate "equipment route" onto
+# SET_TEMP (confirmed by the survey).
+KEY_IAQ_DEVICES_POOL_HEAT = 0x14
+KEY_IAQ_DEVICES_SPA_HEAT = 0x15
+# MENU-page "Set Temp" key (AqualinkD KEY_IAQTCH_KEY04). Pressed ONLY while
+# page == MENU. The AqualinkD route onto SET_TEMP (doubtful here; MENU is empty).
+KEY_IAQT_SET_TEMP = 0x14
+
+# Heater target safe ranges (degrees F). Pool 45 (winter freeze low) to 90; spa
+# 80 to 104 (heater hardware max). Refuse out of range by clamping.
+POOL_TEMP_MIN, POOL_TEMP_MAX = 45, 90
+SPA_TEMP_MIN, SPA_TEMP_MAX = 80, 104
+
+
+def pool_setpoint_check(temp: int) -> int:
+    """Clamp a pool target to the safe 45-90F range."""
+    return max(POOL_TEMP_MIN, min(POOL_TEMP_MAX, int(temp)))
+
+
+def spa_setpoint_check(temp: int) -> int:
+    """Clamp a spa target to the safe 80-104F range."""
+    return max(SPA_TEMP_MIN, min(SPA_TEMP_MAX, int(temp)))
+
+
+def num2iaqt_temp(temp: int) -> bytes:
+    """AqualinkD num2iaqtRSset for a temperature: ASCII digits, NUL-padded to a
+    6-byte field, with a '0' (0x30) at index 4 for sub-1000 values. Reproduces
+    the captured Set-Temp frames (50 -> 35 30 00 00 30 00, 100 -> 31 30 30 00 30 00)."""
+    digits = str(int(temp)).encode("ascii")
+    out = bytearray(6)
+    out[: len(digits)] = digits
+    for i in range(len(digits), 6):
+        out[i] = 0x30 if (i == 4 and len(digits) <= 3) else 0x00
+    return bytes(out)
+
+
+_SETTEMP_PAD = b"\xcd" * 10  # 0xcd padding out to logical index 18 (6-byte field)
+
+
+def build_settemp_frame(temp: int) -> bytes:
+    """The 0x24 value frame that sets a heater target:
+    10 02 00 24 31 <6-byte digit field> <ten 0xcd> <cksum> 10 03 (24 bytes).
+
+    `temp` must already be clamped by the caller (pool vs spa ranges differ).
+    Reproduces AqualinkD's captured Set-Temp(pool) frames for 50F and 100F."""
+    body = bytes([DLE, STX, 0x00, _VSP_SET_CMD, _VSP_SET_SUBBYTE]) + num2iaqt_temp(temp) + _SETTEMP_PAD
+    cksum = sum(body) & 0xFF
+    return body + bytes([cksum, DLE, ETX])
+
+
+def settemp_write_allowed(current_page: int) -> bool:
+    """True only on the SET_TEMP page (0x39). The 0x24 value frame is transmitted
+    only here; this is the central safety gate for the setpoint sequence."""
+    return current_page == IAQ_PAGE_SET_TEMP
