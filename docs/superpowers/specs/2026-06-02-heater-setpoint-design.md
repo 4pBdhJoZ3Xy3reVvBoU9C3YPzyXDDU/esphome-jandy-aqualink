@@ -54,9 +54,25 @@ this, proven live on the pump in Session 6:
 - The gated multi-step state machine `advance_set_sequence_` in `jandy_aqualink.cpp`.
 
 So the only genuinely new wire detail is the **digit format for a 2-to-3-digit degrees-F value**
-(85, 94, 104). The pump used 3-to-4-digit RPM; the padding/width for short numbers must be re-verified
-against a real captured SET_TEMP frame (TDD), not guessed. AqualinkD uses the same `num2iaqtRSset`
-for both, so the existing encoder is the strong candidate, but capture confirms it.
+(85, 94, 104), and the deep dive into AqualinkD RESOLVED it; we are not guessing. `num2iaqtRSset`
+(`iaqtouch.c`) is the authoritative encoder, used for BOTH pump RPM and heater setpoint. It writes the
+ASCII digits then pads a 6-byte field, with one quirk: a `0x30` ('0') at index 4 for sub-1000 values.
+The full Set-Temp frame AqualinkD sends is `10 02 00 24 31 <6-byte digit field> <0xcd x10> <cksum>
+10 03`. AqualinkD's own captured "Set Temp (pool)" frames in `iaqtouch.h` confirm it, and reproduce
+byte-for-byte including the checksum:
+
+- 50F  -> digit field `35 30 00 00 30 00`  (captured)
+- 100F -> digit field `31 30 30 00 30 00`, full frame cksum `0x2a` (captured, verified by hand)
+
+So our targets are COMPUTED, not guessed:
+
+- 85F  -> `38 35 00 00 30 00`   (full-frame cksum `0x06`)
+- 94F  -> `39 34 00 00 30 00`   (full-frame cksum `0x06`)
+- 104F -> `31 30 34 00 30 00`
+
+IMPORTANT: this padding differs from the pump's `num2iaqt_rpm` (which pads to 5 bytes and omits the
+index-4 '0'), so the setpoint gets its OWN faithful `num2iaqtRSset` mirror, TDD'd against the captured
+50F/100F frames; the proven pump encoder is left untouched.
 
 ## Design
 
@@ -74,21 +90,26 @@ for both, so the existing encoder is the strong candidate, but capture confirms 
      (`0x14`) -> does SET_TEMP open, or does the heater just toggle?
   2. MENU route: HOME -> MENU (`0x02`) -> send Set Temp key (`0x14`) -> does SET_TEMP open?
 - On reaching SET_TEMP, capture: (a) the exact key + page that opened it for pool vs spa; (b) the page
-  enumeration (AqualinkD shows button labels like "Pool Heat NN" / "Spa Heat NN", so this likely lets
-  us READ the current 104 directly and may give free setpoint-readback); (c) at least one real `0x24`
-  value frame per body, for the digit-format TDD.
+  enumeration. AqualinkD selects a button by label ("Pool Heat NN" / "Spa Heat NN") before sending the
+  value (`set_aqualink_iaqtouch_heater_setpoint`), so we need the pool/spa button keycodes from the
+  enumeration, and the labels also expose the CURRENT setpoints (we should see the spa's stored ~104
+  directly). The value-frame format is already resolved from AqualinkD captures (see above), so a live
+  frame is now a nice confirmation, NOT a prerequisite. The survey's real job shrinks to one yes/no:
+  does SET_TEMP (`0x39`) open on this panel, and does it enumerate the pool/spa items.
 - If neither route opens SET_TEMP, conclude it is not reachable on this panel; ship sections 4 and 5
   (status sensors + water-mode fix) and defer the setpoint.
 
 ### 2. Temperature setpoint write (built from the survey capture, TDD)
 
 - A new gated routine mirroring the proven pump-speed setter: open SET_TEMP the way the survey found,
-  select the body's setpoint, reply `ACK_CMD_READY_CTRL` (`0x80`) on a poll, the panel sends
-  CMD_IAQ_CTRL_READY (`0x31`), transmit the `0x24` value frame with the ASCII degree digits, read
-  back, return HOME. Same shape and mutual exclusion as `advance_set_sequence_`.
-- Digit encoder for degrees F: re-verify width/padding for 2-to-3-digit values against the captured
-  frame (TDD). Reuse `num2iaqt_rpm` if the capture matches; add a temperature-specific encoder only if
-  it differs.
+  select the body (press the Pool Heat / Spa Heat button on SET_TEMP, keycode from the enumeration),
+  reply `ACK_CMD_READY_CTRL` (`0x80`) on a poll, the panel sends CMD_IAQ_CTRL_READY (`0x31`), transmit
+  the `0x24` value frame with the ASCII degree digits, read back, return HOME. Same shape and mutual
+  exclusion as `advance_set_sequence_`. Order mirrors AqualinkD `set_aqualink_iaqtouch_heater_setpoint`.
+- Digit encoder for degrees F: a faithful `num2iaqtRSset` mirror (6-byte field, `0x30` at index 4 for
+  sub-1000), TDD'd against AqualinkD's captured Set-Temp frames (50F = `35 30 00 00 30 00`, 100F =
+  `31 30 30 00 30 00`) plus the computed 85/94/104 frames and their checksums. This is its OWN encoder,
+  NOT the pump's `num2iaqt_rpm` (the padding differs); the pump path is left untouched.
 - Clamps: pool 45 to 90F, spa 80 to 104F. Refuse out of range (mirror `rpm_check`).
 - HA controls: a `number` entity per body, "Pool Heat Setpoint" and "Spa Heat Setpoint", gated exactly
   like the pump-speed slider (master interlock + presence). Defaults seeded to 85 (pool) and 94 (spa).
@@ -112,6 +133,10 @@ for both, so the existing encoder is the strong candidate, but capture confirms 
   button states (Session 9 captures: enabled = `B2/B3 s3 t11`, off = `s0 t5`). The `IaqReader` already
   parses HOME buttons. Read-only, continuous from the HOME enumeration plus deltas. Useful on their own
   and a prerequisite for any future spa auto-off automation (so it never toggles the wrong way).
+- BONUS (only if the survey shows SET_TEMP enumerates): publish the CURRENT pool/spa setpoints as
+  read-only number/sensors, parsed from the SET_TEMP button labels ("Pool Heat NN"), mirroring
+  AqualinkD `get_aqualink_iaqtouch_setpoints`. This gives a true readback that a write took, and shows
+  the spa's stored target. Skip if the page does not enumerate (YAGNI).
 
 ### 5. Water-mode reliability fix (root cause)
 
@@ -142,15 +167,18 @@ for both, so the existing encoder is the strong candidate, but capture confirms 
 
 ## Build order (writing-plans splits at the survey seam)
 
-1. Desk, TDD, route-independent: the clamps + temperature encoder candidate, the heat-state status
-   decode + sensors, the water-mode reader fix, and the gated survey instrument.
-2. Live survey (founder watching): confirm the route, capture the value frame + current setpoints.
-3. Desk, TDD: finalize the gated setpoint state machine + the value frame from the real capture; HA
-   number entities.
+1. Desk, TDD, route-independent: the clamps + the temperature encoder (faithful `num2iaqtRSset` mirror,
+   TDD against AqualinkD's captured 50F/100F Set-Temp frames + the computed 85/94/104 + checksums), the
+   heat-state status decode + sensors, the water-mode reader fix, and the gated survey instrument.
+2. Live survey (founder watching): confirm the NAVIGATION route to SET_TEMP and that it enumerates the
+   pool/spa items (the value-frame format is already resolved on the desk, step 1).
+3. Desk, TDD: finalize the gated setpoint state machine + HA number entities, wiring in the route the
+   survey confirmed and the pool/spa button keycodes it captured.
 4. Live test: set spa 94 / pool 85, confirm, observe spa auto-off, set the resting state.
 
-No guessed bytes: every desk-built byte-builder is verified against a real captured frame before the
-setpoint is trusted, exactly as the Phase 1 plan deferred the value pieces to the survey.
+No guessed bytes: the value frame is verified on the desk against AqualinkD's real captured Set-Temp
+frames before any flash; the only thing the live survey adds is the navigation route (which key on
+which page opens `0x39`), which no source can confirm for this specific screenless panel.
 
 ## Non-goals / out of scope
 
