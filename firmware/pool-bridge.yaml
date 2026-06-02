@@ -216,6 +216,26 @@ button:
     on_press:
       - lambda: "id(jandy_comp).iaq_press(0x16);"   # home button 5 = Air Blower
 
+  # DEVICES-page toggles (gated by interlock + iAqualink presence + the
+  # device-toggle allowlist; each navigates to DEVICES and confirms the page
+  # before pressing one keycode). Extra Aux and Sprinklers are the panel's own
+  # generic labels; relabel after the live test reveals what they actually drive.
+  - platform: template
+    name: "Spa Light"
+    icon: "mdi:lightbulb-night"
+    on_press:
+      - lambda: "id(jandy_comp).press_device_toggle(0x19);"   # DEVICES slot 8 = Spa Light
+  - platform: template
+    name: "Extra Aux"
+    icon: "mdi:toggle-switch"
+    on_press:
+      - lambda: "id(jandy_comp).press_device_toggle(0x1D);"   # DEVICES slot 12 = Extra Aux
+  - platform: template
+    name: "Sprinklers"
+    icon: "mdi:sprinkler"
+    on_press:
+      - lambda: "id(jandy_comp).press_device_toggle(0x1E);"   # DEVICES slot 13 = Sprinklers
+
   # --- Survey navigation (read-only). Gated by the master interlock + iAqualink
   # presence. Each sends ONE global page-movement key; none can actuate equipment.
   # Temporary survey instruments; the useful ones stay, the rest get removed after.
