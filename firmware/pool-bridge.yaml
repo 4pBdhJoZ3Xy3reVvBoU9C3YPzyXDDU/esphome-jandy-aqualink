@@ -192,6 +192,13 @@ button:
     icon: "mdi:pool"
     on_press:
       - lambda: "id(jandy_comp).request_pool_mode();"
+  # Mirror of Switch to Pool Mode for the other direction (pool -> spa). Gated by
+  # the interlock + presence; refuses if already in spa. Sends only the Spa toggle.
+  - platform: template
+    name: "Switch to Spa Mode"
+    icon: "mdi:hot-tub"
+    on_press:
+      - lambda: "id(jandy_comp).request_spa_mode();"
 
   # iAqualink equipment toggles (gated by interlock + iAqualink presence + the
   # allowlist). The heater buttons are deliberately not exposed.

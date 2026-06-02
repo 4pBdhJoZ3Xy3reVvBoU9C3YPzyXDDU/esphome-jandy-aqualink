@@ -635,6 +635,18 @@ void JandyAqualink::request_pool_mode() {
   iaq_press(jandy::KEY_IAQ_SPA);  // 0x12 Spa toggle -> spa off -> Pool Mode
 }
 
+void JandyAqualink::request_spa_mode() {
+  int wm;
+  portENTER_CRITICAL(&mux_);
+  wm = iaq_water_mode_;
+  portEXIT_CRITICAL(&mux_);
+  if (wm == 3) {  // 3 = spa mode; only act when NOT already in spa
+    ESP_LOGW(TAG, "spa-mode REFUSED: panel is already in spa mode (water_mode=%d)", wm);
+    return;
+  }
+  iaq_press(jandy::KEY_IAQ_SPA);  // 0x12 Spa toggle -> spa on -> Spa Mode
+}
+
 // Log iAqualink frames the panel sends our 0x33 slot, skipping the bare poll
 // (0x30) and probe (0x00) keepalives. The 0x25 page messages carry the display
 // text (temperatures); the ascii column on the right shows it.

@@ -68,6 +68,12 @@ class JandyAqualink : public Component {
   // Drain/Fill. Idempotent: refuses if not currently in spa mode.
   void request_pool_mode();
 
+  // Mirror of request_pool_mode for the other direction: switch the panel TO Spa
+  // Mode by pressing the same Spa toggle (0x12). Gated by the master interlock +
+  // iAqualink presence (via iaq_press) and idempotent: refuses if already in spa
+  // mode. Sends exactly that one keycode.
+  void request_spa_mode();
+
   // Press one allowlisted iAqualink home-page equipment button (filter pump,
   // spa, or pool light). Gated by the master interlock, iAqualink presence, and
   // the allowlist, which excludes the heaters. Sends exactly one key.
