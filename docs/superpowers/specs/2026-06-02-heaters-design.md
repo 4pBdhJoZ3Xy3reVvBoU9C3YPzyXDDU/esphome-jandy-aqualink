@@ -102,9 +102,16 @@ state sensors still ship, and only the target-temp part defers.
 - **Panel flow interlock**: in Auto the panel should refuse to fire a heater without
   the filter pump running. CONFIRM this live before trusting it.
 - **Master interlock + presence** gate everything; off by default.
-- Out of scope here: "keep the pool at 85 automatically" is HA-brain (automation)
-  territory for the next session. This session ships the manual primitive (enable +
-  setpoint); the brain will schedule it.
+- **Pool maintenance is the panel's own thermostat, in scope for free.** Once Pool
+  Heat is enabled with the 85 setpoint, the panel itself fires the heater whenever
+  the pool is below 85 AND the pump is circulating, and stops at 85. So this
+  session's "enable + setpoint" delivers the maintain-85 behavior directly, via the
+  panel, with no HA automation. Caveat: the panel can only heat while the pump runs
+  (the flow interlock), so the pool holds 85 whenever the pump is circulating;
+  coordinating the pump schedule with heating (so the pool does not drift while the
+  pump is off) is the HA brain's job next session. Other optional brain additions
+  later: seasonal target changes, ensuring the enable persists. None of that is
+  needed for the basic "drop below 85, heater kicks on" maintenance.
 
 ### 5. Testing (TDD)
 
