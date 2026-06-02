@@ -218,23 +218,26 @@ button:
 
   # DEVICES-page toggles (gated by interlock + iAqualink presence + the
   # device-toggle allowlist; each navigates to DEVICES and confirms the page
-  # before pressing one keycode). Extra Aux and Sprinklers are the panel's own
-  # generic labels; relabel after the live test reveals what they actually drive.
+  # before pressing one keycode). Labels confirmed by the live test 2026-06-02:
+  # slot 12 turned out to be the Solar Light. Spa Light's fixture is currently
+  # unplugged (command confirmed correct on the bus, no light), and Sprinklers is
+  # a legacy pool-cooling circuit whose controller was removed (command confirmed,
+  # nothing wired). All three send correctly and are kept for future reconnection.
   - platform: template
     name: "Spa Light"
     icon: "mdi:lightbulb-night"
     on_press:
-      - lambda: "id(jandy_comp).press_device_toggle(0x19);"   # DEVICES slot 8 = Spa Light
+      - lambda: "id(jandy_comp).press_device_toggle(0x19);"   # DEVICES slot 8 = Spa Light (fixture unplugged 2026-06-02)
   - platform: template
-    name: "Extra Aux"
-    icon: "mdi:toggle-switch"
+    name: "Solar Light"
+    icon: "mdi:outdoor-lamp"
     on_press:
-      - lambda: "id(jandy_comp).press_device_toggle(0x1D);"   # DEVICES slot 12 = Extra Aux
+      - lambda: "id(jandy_comp).press_device_toggle(0x1D);"   # DEVICES slot 12 = Solar Light (was "Extra Aux"; confirmed live 2026-06-02)
   - platform: template
     name: "Sprinklers"
     icon: "mdi:sprinkler"
     on_press:
-      - lambda: "id(jandy_comp).press_device_toggle(0x1E);"   # DEVICES slot 13 = Sprinklers
+      - lambda: "id(jandy_comp).press_device_toggle(0x1E);"   # DEVICES slot 13 = Sprinklers (legacy pool-cooling, controller removed)
 
   # --- Survey navigation (read-only). Gated by the master interlock + iAqualink
   # presence. Each sends ONE global page-movement key; none can actuate equipment.
