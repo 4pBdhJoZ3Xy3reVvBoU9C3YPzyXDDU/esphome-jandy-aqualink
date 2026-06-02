@@ -112,6 +112,12 @@ class JandyAqualink : public Component {
   // the panel then runs the thermostat to the setpoint. One write-sequence at a time.
   void press_heater(uint8_t keycode);
 
+  // SURVEY-ONLY (Phase 2 setpoint route discovery): send ONE keycode, but ONLY if
+  // the decoder confirms the panel is on expect_page. Gated by interlock + presence
+  // + one-at-a-time. The page-confirm means a page-scoped key (0x14 is Pool Heat on
+  // DEVICES, Set Temp on MENU) can never fire on the wrong page. No value frame.
+  void survey_press(uint8_t key, uint8_t expect_page);
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
@@ -209,6 +215,10 @@ class JandyAqualink : public Component {
   // (core 0) under mux_ and by the core-1 task as it advances.
   volatile int iaq_heater_step_{0};
   volatile int iaq_heater_key_{-1};
+
+  // Survey one-shot press: -1 idle, else the keycode armed for iaq_survey_page_.
+  volatile int16_t iaq_survey_key_{-1};
+  volatile int iaq_survey_page_{-1};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records

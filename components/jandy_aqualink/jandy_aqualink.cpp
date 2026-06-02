@@ -166,6 +166,40 @@ void JandyAqualink::task_loop() {
           portEXIT_CRITICAL(&mux_);
           continue;  // this 0x33 frame fully handled by the heater sequence
         }
+
+        // SURVEY one-shot: send the armed key ONLY on the confirmed expected page.
+        int sv_key, sv_page;
+        portENTER_CRITICAL(&mux_);
+        sv_key = iaq_survey_key_;
+        sv_page = iaq_survey_page_;
+        portEXIT_CRITICAL(&mux_);
+        if (sv_key >= 0) {
+          if (f.cmd() == 0x30) {
+            int page = iaq_reader_.current_page();
+            if (page == sv_page) {
+              send_iaq_ack_(static_cast<uint8_t>(sv_key));
+              ESP_LOGW(TAG, "survey: pressed 0x%02X on page 0x%02X (%s)", sv_key, page,
+                       jandy::iaq_page_name(static_cast<uint8_t>(page)));
+            } else {
+              send_iaq_ack_(0x00);
+              ESP_LOGW(TAG, "survey REFUSED at transmit: on 0x%02X (%s), expected 0x%02X", page,
+                       jandy::iaq_page_name(static_cast<uint8_t>(page)), sv_page);
+            }
+            portENTER_CRITICAL(&mux_);
+            iaq_survey_key_ = -1;
+            iaq_survey_page_ = -1;
+            portEXIT_CRITICAL(&mux_);
+          } else {
+            send_iaq_ack_(0x00);
+          }
+          iaq_reader_.feed(f);
+          portENTER_CRITICAL(&mux_);
+          iaq_current_page_ = iaq_reader_.current_page();
+          frames_++;
+          portEXIT_CRITICAL(&mux_);
+          continue;  // this 0x33 frame fully handled by the survey one-shot
+        }
+
         // iAqualink: the panel sends its slot one frame at a time and waits for
         // an ACK before the next, so we reply in-slot to every 0x33 frame. The
         // ACK is inert (read-only) unless a key is armed AND this is the poll
@@ -241,6 +275,8 @@ void JandyAqualink::set_interlock(bool on) {
     iaq_toggle_key_ = -1;
     iaq_heater_step_ = 0;  // and any in-progress heater sequence
     iaq_heater_key_ = -1;
+    iaq_survey_key_ = -1;    // and any armed survey press
+    iaq_survey_page_ = -1;
     iaq_return_home_ = false;
   }
   portEXIT_CRITICAL(&mux_);
@@ -424,6 +460,28 @@ void JandyAqualink::press_heater(uint8_t keycode) {
   iaq_heater_step_ = 1;  // kick off the sequence on the next poll
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "heater: start sequence -> key 0x%02X", keycode);
+}
+
+void JandyAqualink::survey_press(uint8_t key, uint8_t expect_page) {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "survey REFUSED: safety interlock is OFF (key=0x%02X)", key);
+    return;
+  }
+  if (!iaq_presence_) {
+    ESP_LOGW(TAG, "survey REFUSED: iAqualink presence is OFF (key=0x%02X)", key);
+    return;
+  }
+  portENTER_CRITICAL(&mux_);
+  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0) {
+    portEXIT_CRITICAL(&mux_);
+    ESP_LOGW(TAG, "survey REFUSED: another sequence is in progress (key=0x%02X)", key);
+    return;
+  }
+  iaq_survey_key_ = key;
+  iaq_survey_page_ = expect_page;
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "survey: armed key 0x%02X for page 0x%02X (%s)", key, expect_page,
+           jandy::iaq_page_name(expect_page));
 }
 
 // core-1: write a 9-byte iAqualink ACK carrying `key` (0x00 = inert presence).

@@ -268,6 +268,25 @@ button:
     on_press:
       - lambda: "id(jandy_comp).press_heater(0x14);"   # HOME slot 3 = Spa Heat (spa mode only)
 
+  # SURVEY (Phase 2 setpoint route discovery; gated + one-shot + page-confirmed).
+  # Navigate first (Other Devices -> DEVICES, or Menu -> MENU), confirm the page in
+  # the log, then press the matching survey button and watch for IAQ PAGE SET_TEMP(0x39).
+  - platform: template
+    name: "Survey: Pool Heat on DEVICES"
+    icon: "mdi:magnify"
+    on_press:
+      - lambda: "id(jandy_comp).survey_press(0x14, 0x36);"   # DEVICES Pool Heat -> SET_TEMP?
+  - platform: template
+    name: "Survey: Spa Heat on DEVICES"
+    icon: "mdi:magnify"
+    on_press:
+      - lambda: "id(jandy_comp).survey_press(0x15, 0x36);"   # DEVICES Spa Heat -> SET_TEMP?
+  - platform: template
+    name: "Survey: Set Temp on MENU"
+    icon: "mdi:magnify"
+    on_press:
+      - lambda: "id(jandy_comp).survey_press(0x14, 0x0F);"   # MENU Set Temp (KEY04) -> SET_TEMP?
+
   # --- Survey navigation (read-only). Gated by the master interlock + iAqualink
   # presence. Each sends ONE global page-movement key; none can actuate equipment.
   # Temporary survey instruments; the useful ones stay, the rest get removed after.
