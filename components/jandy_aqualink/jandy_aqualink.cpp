@@ -629,24 +629,29 @@ void JandyAqualink::advance_heater_sequence_() {
 }
 
 void JandyAqualink::request_pool_mode() {
-  int wm;
+  // Use the reliable 0x08 spa bit (cs_spa_), not the intermittent iAqualink home
+  // label (iaq_water_mode_), which reads "unknown" between updates and caused a
+  // spurious refusal. Switch to pool only when confirmed in spa mode (cs_spa_==1).
+  int8_t spa;
   portENTER_CRITICAL(&mux_);
-  wm = iaq_water_mode_;
+  spa = cs_spa_;
   portEXIT_CRITICAL(&mux_);
-  if (wm != 3) {  // 3 = spa mode; only act when currently in spa mode
-    ESP_LOGW(TAG, "pool-mode REFUSED: panel is not in spa mode (water_mode=%d)", wm);
+  if (spa != 1) {
+    ESP_LOGW(TAG, "pool-mode REFUSED: panel is not in spa mode (spa_bit=%d)", spa);
     return;
   }
   iaq_press(jandy::KEY_IAQ_SPA);  // 0x12 Spa toggle -> spa off -> Pool Mode
 }
 
 void JandyAqualink::request_spa_mode() {
-  int wm;
+  // Use the reliable 0x08 spa bit (cs_spa_). Switch to spa only when confirmed in
+  // pool mode (cs_spa_==0); refuse if already in spa (1) or unknown (-1).
+  int8_t spa;
   portENTER_CRITICAL(&mux_);
-  wm = iaq_water_mode_;
+  spa = cs_spa_;
   portEXIT_CRITICAL(&mux_);
-  if (wm == 3) {  // 3 = spa mode; only act when NOT already in spa
-    ESP_LOGW(TAG, "spa-mode REFUSED: panel is already in spa mode (water_mode=%d)", wm);
+  if (spa != 0) {
+    ESP_LOGW(TAG, "spa-mode REFUSED: not confirmed in pool mode (spa_bit=%d)", spa);
     return;
   }
   iaq_press(jandy::KEY_IAQ_SPA);  // 0x12 Spa toggle -> spa on -> Spa Mode
