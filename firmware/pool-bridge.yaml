@@ -239,6 +239,22 @@ button:
     on_press:
       - lambda: "id(jandy_comp).press_device_toggle(0x1E);"   # DEVICES slot 13 = Sprinklers (legacy pool-cooling, controller removed)
 
+  # Heaters (HIGHEST-STAKES; gated by interlock + presence + a HOME-page-only guard;
+  # Spa Heat additionally refuses unless the panel is in spa mode). These are on/off
+  # enables; once enabled the panel maintains the target. Temperature setpoints are a
+  # follow-up build (Phase 2). The heater keycodes were excluded from every allowlist
+  # until now.
+  - platform: template
+    name: "Pool Heat"
+    icon: "mdi:radiator"
+    on_press:
+      - lambda: "id(jandy_comp).press_heater(0x13);"   # HOME slot 2 = Pool Heat
+  - platform: template
+    name: "Spa Heat"
+    icon: "mdi:hot-tub"
+    on_press:
+      - lambda: "id(jandy_comp).press_heater(0x14);"   # HOME slot 3 = Spa Heat (spa mode only)
+
   # --- Survey navigation (read-only). Gated by the master interlock + iAqualink
   # presence. Each sends ONE global page-movement key; none can actuate equipment.
   # Temporary survey instruments; the useful ones stay, the rest get removed after.
