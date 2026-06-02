@@ -1028,6 +1028,8 @@ void JandyAqualink::advance_settemp_sequence_() {
 
 - [ ] **Step 6: Extend the busy-guards** so every write entry point refuses while the setpoint sequence runs. In `set_pump_rpm` change `if (iaq_toggle_step_ != 0 || iaq_heater_step_ != 0)` to `if (iaq_toggle_step_ != 0 || iaq_heater_step_ != 0 || iaq_settemp_step_ != 0)`. In `press_device_toggle`, `press_heater`, and `survey_press` change `if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0)` to `if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0 || iaq_settemp_step_ != 0)`.
 
+  ALSO apply the deferred final-review robustness fix from Task 6 at the SAME guard sites: add `|| iaq_survey_key_ >= 0` to the busy checks in `set_pump_rpm`, `press_device_toggle`, and `press_heater` (so a new equipment sequence also refuses while a survey one-shot is armed, symmetric with the guard `survey_press` already has). Net: those three guards end up checking `iaq_set_step_`/`iaq_toggle_step_`/`iaq_heater_step_`/`iaq_settemp_step_` AND `iaq_survey_key_ >= 0` (set_pump_rpm omits its own `iaq_set_step_` term as before). This was deferred here because Task 10 already rewrites these exact lines.
+
 - [ ] **Step 7: Number entities** (`firmware/pool-bridge.yaml`). After the `Pump Speed Set` number block (line 351), within the `number:` list:
 
 ```yaml
