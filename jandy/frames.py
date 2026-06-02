@@ -302,3 +302,24 @@ def vsp_adjust_allowed(current_page: int) -> bool:
     Heat on the HOME page, so sending it anywhere else could fire a heater. This
     is the central safety gate for the pump-set sequence."""
     return current_page == IAQ_PAGE_DEVICES
+
+
+# --- DEVICES-page single-circuit toggles ------------------------------------
+#
+# Single on/off presses for the harmless DEVICES-page circuits (keycode =
+# 0x11 + slot): slot 8 Spa Light, slot 12 Extra Aux, slot 13 Sprinklers. Like
+# the VSP-adjust key these are page-scoped (the same byte means other equipment
+# on HOME), so the caller must confirm page == DEVICES before pressing one.
+KEY_IAQ_DEVICES_SPA_LIGHT = 0x19
+KEY_IAQ_DEVICES_EXTRA_AUX = 0x1D
+KEY_IAQ_DEVICES_SPRINKLERS = 0x1E
+
+_DEVICE_TOGGLE_KEYS = frozenset(
+    {KEY_IAQ_DEVICES_SPA_LIGHT, KEY_IAQ_DEVICES_EXTRA_AUX, KEY_IAQ_DEVICES_SPRINKLERS}
+)
+
+
+def is_device_toggle_allowed(key: int) -> bool:
+    """True only for the allowlisted DEVICES-page toggle keys (Spa Light, Extra
+    Aux, Sprinklers). Page-scoped: the caller must also confirm page == DEVICES."""
+    return key in _DEVICE_TOGGLE_KEYS

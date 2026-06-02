@@ -45,6 +45,18 @@ static constexpr uint8_t IAQ_PAGE_DEVICES = 0x36;
 // page-scoped, named separately so it is never confused with a heater press.
 static constexpr uint8_t KEY_IAQ_DEVICES_VSP_ADJ = 0x13;
 
+// DEVICES-page toggle keycodes (page-scoped; keycode = 0x11 + slot): slot 8 Spa
+// Light, slot 12 Extra Aux, slot 13 Sprinklers. Allowlisted for press_device_toggle
+// only, which never presses unless the panel is confirmed on the DEVICES page.
+static constexpr uint8_t KEY_IAQ_DEVICES_SPA_LIGHT = 0x19,
+                         KEY_IAQ_DEVICES_EXTRA_AUX = 0x1D,
+                         KEY_IAQ_DEVICES_SPRINKLERS = 0x1E;
+
+inline bool is_device_toggle_allowed(uint8_t key) {
+  return key == KEY_IAQ_DEVICES_SPA_LIGHT || key == KEY_IAQ_DEVICES_EXTRA_AUX ||
+         key == KEY_IAQ_DEVICES_SPRINKLERS;
+}
+
 // Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
 // the menu/display and never actuate equipment, so they are the ONLY keys this
 // build will transmit. Equipment keys (pump 0x02, spa 0x01, pool heater 0x12,
