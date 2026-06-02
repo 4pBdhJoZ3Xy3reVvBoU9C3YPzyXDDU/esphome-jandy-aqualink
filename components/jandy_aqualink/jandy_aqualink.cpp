@@ -208,6 +208,8 @@ void JandyAqualink::task_loop() {
         if (ts.has_watts) iaq_watts_ = ts.watts;
         iaq_water_mode_ = iaq_reader_.water_mode();
         iaq_current_page_ = iaq_reader_.current_page();
+        if (iaq_reader_.has_pool_heat()) he_pool_ = iaq_reader_.pool_heat_enabled() ? 1 : 0;
+        if (iaq_reader_.has_spa_heat()) he_spa_ = iaq_reader_.spa_heat_enabled() ? 1 : 0;
         // After a requested STATUS read completes (page end on the status page),
         // arm HOME so the panel resumes pushing temperatures.
         if (iaq_return_home_ && f.cmd() == 0x28 &&
@@ -924,6 +926,19 @@ void JandyAqualink::loop() {
     if (cleaner_bs_ && clean_s >= 0 && clean_s != pub_cs_cleaner_) {
       cleaner_bs_->publish_state(clean_s != 0);
       pub_cs_cleaner_ = clean_s;
+    }
+    int8_t he_p, he_s;
+    portENTER_CRITICAL(&mux_);
+    he_p = he_pool_;
+    he_s = he_spa_;
+    portEXIT_CRITICAL(&mux_);
+    if (pool_heat_bs_ && he_p >= 0 && he_p != pub_he_pool_) {
+      pool_heat_bs_->publish_state(he_p != 0);
+      pub_he_pool_ = he_p;
+    }
+    if (spa_heat_bs_ && he_s >= 0 && he_s != pub_he_spa_) {
+      spa_heat_bs_->publish_state(he_s != 0);
+      pub_he_spa_ = he_s;
     }
   }
 

@@ -40,6 +40,8 @@ class JandyAqualink : public Component {
   void set_air_blower_bs(binary_sensor::BinarySensor *b) { air_blower_bs_ = b; }
   void set_filter_pump_bs(binary_sensor::BinarySensor *b) { filter_pump_bs_ = b; }
   void set_cleaner_bs(binary_sensor::BinarySensor *b) { cleaner_bs_ = b; }
+  void set_pool_heat_bs(binary_sensor::BinarySensor *b) { pool_heat_bs_ = b; }
+  void set_spa_heat_bs(binary_sensor::BinarySensor *b) { spa_heat_bs_ = b; }
 
   // Phase 2 gated keypress controls. Called from core 0 (HA/web/lambda). The
   // master interlock is OFF by default; with it off the device is exactly v1
@@ -139,10 +141,14 @@ class JandyAqualink : public Component {
   binary_sensor::BinarySensor *air_blower_bs_{nullptr};
   binary_sensor::BinarySensor *filter_pump_bs_{nullptr};
   binary_sensor::BinarySensor *cleaner_bs_{nullptr};
+  binary_sensor::BinarySensor *pool_heat_bs_{nullptr};
+  binary_sensor::BinarySensor *spa_heat_bs_{nullptr};
   // Decoded keypad-status circuit states, written by core 1 under mux_, published
   // by core 0. -1 = not yet known, 0 = off, 1 = on.
   volatile int8_t cs_spa_{-1}, cs_blower_{-1}, cs_pump_{-1}, cs_cleaner_{-1};
   int8_t pub_cs_spa_{-2}, pub_cs_blower_{-2}, pub_cs_pump_{-2}, pub_cs_cleaner_{-2};
+  volatile int8_t he_pool_{-1}, he_spa_{-1};
+  int8_t pub_he_pool_{-2}, pub_he_spa_{-2};
 
   TaskHandle_t task_{nullptr};
   portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;

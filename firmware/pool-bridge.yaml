@@ -91,6 +91,12 @@ jandy_aqualink:
     name: Pool Filter Pump (status)
   cleaner_state:
     name: Pool Cleaner (status)
+  # Heater on/off, decoded from the HOME-page heater button states (Session 9:
+  # state 3 = enabled). Read-only; updates from the HOME enumeration plus deltas.
+  pool_heat_enabled:
+    name: Pool Heat (enabled)
+  spa_heat_enabled:
+    name: Spa Heat (enabled)
 
 # --- Phase 2 gated keypress controls ---
 # Reading temperatures needs the panel to redraw its display, which it only does
