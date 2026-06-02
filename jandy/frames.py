@@ -333,7 +333,7 @@ def is_device_toggle_allowed(key: int) -> bool:
 # ONLY ever be sent on HOME. Spa Heat additionally must never be enabled outside
 # spa mode (water_mode 3). The panel runs the thermostat once a heater is enabled.
 KEY_IAQ_HOME_POOL_HEAT = 0x13
-KEY_IAQ_HOME_SPA_HEAT = 0x14
+KEY_IAQ_HOME_SPA_HEAT = 0x14  # 0x14 is page-scoped: Spa Heat on HOME, Pool Heat on DEVICES, Set Temp on MENU
 WATER_MODE_SPA = 3
 
 _HEATER_KEYS = frozenset({KEY_IAQ_HOME_POOL_HEAT, KEY_IAQ_HOME_SPA_HEAT})
@@ -373,11 +373,11 @@ IAQ_PAGE_MENU = 0x0F
 # DEVICES-page heat items (keycode = 0x11 + slot): slot 3 Pool Heat, slot 4 Spa
 # Heat. Pressed ONLY while page == DEVICES. The candidate "equipment route" onto
 # SET_TEMP (confirmed by the survey).
-KEY_IAQ_DEVICES_POOL_HEAT = 0x14
+KEY_IAQ_DEVICES_POOL_HEAT = 0x14  # 0x14 is page-scoped: Spa Heat on HOME, Pool Heat on DEVICES, Set Temp on MENU
 KEY_IAQ_DEVICES_SPA_HEAT = 0x15
 # MENU-page "Set Temp" key (AqualinkD KEY_IAQTCH_KEY04). Pressed ONLY while
 # page == MENU. The AqualinkD route onto SET_TEMP (doubtful here; MENU is empty).
-KEY_IAQT_SET_TEMP = 0x14
+KEY_IAQT_SET_TEMP = 0x14  # 0x14 is page-scoped: Spa Heat on HOME, Pool Heat on DEVICES, Set Temp on MENU
 
 # Heater target safe ranges (degrees F). Pool 45 (winter freeze low) to 90; spa
 # 80 to 104 (heater hardware max). Refuse out of range by clamping.
@@ -407,7 +407,7 @@ def num2iaqt_temp(temp: int) -> bytes:
     return bytes(out)
 
 
-_SETTEMP_PAD = b"\xcd" * 10  # 0xcd padding out to logical index 18 (6-byte field)
+_SETTEMP_PAD = b"\xcd" * 10  # 10 bytes (vs pump's 11) because the temp digit field is 6 bytes vs pump's 5, keeping the same 24-byte frame total
 
 
 def build_settemp_frame(temp: int) -> bytes:

@@ -67,6 +67,18 @@ class TestBuildSettempFrame(unittest.TestCase):
             self.assertTrue(extracted[0].checksum_valid())
             self.assertEqual(extracted[0].cmd, 0x24)
 
+    def test_caller_is_responsible_for_clamping(self):
+        # build_settemp_frame intentionally does NOT clamp (pool vs spa ranges
+        # differ, so the caller clamps via pool/spa_setpoint_check). An unclamped
+        # out-of-range value still yields a structurally valid 24-byte frame.
+        fr = frames.build_settemp_frame(200)
+        self.assertEqual(len(fr), 24)
+        extracted = frames.FrameExtractor().feed(fr)
+        self.assertEqual(len(extracted), 1)
+        self.assertTrue(extracted[0].checksum_valid())
+        self.assertEqual(extracted[0].cmd, 0x24)
+        self.assertEqual(frames.num2iaqt_temp(200), bytes.fromhex("323030003000"))
+
 
 class TestSettempWriteAllowed(unittest.TestCase):
     def test_true_only_on_set_temp_page(self):
