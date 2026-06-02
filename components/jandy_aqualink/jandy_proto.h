@@ -57,6 +57,24 @@ inline bool is_device_toggle_allowed(uint8_t key) {
          key == KEY_IAQ_DEVICES_SPRINKLERS;
 }
 
+// Heater on/off (HOME page). Pool Heat 0x13, Spa Heat 0x14 (page-scoped: 0x13 is
+// the VSP-adjust on DEVICES, 0x14 is Pool Heat on DEVICES), so a heater key is only
+// ever sent on HOME. Spa Heat must never be enabled outside spa mode (water_mode 3).
+// is_heater_key is the allowlist; heater_enable_allowed is the full gate.
+static constexpr uint8_t KEY_IAQ_HOME_POOL_HEAT = 0x13, KEY_IAQ_HOME_SPA_HEAT = 0x14;
+static constexpr int WATER_MODE_SPA = 3;
+
+inline bool is_heater_key(uint8_t key) {
+  return key == KEY_IAQ_HOME_POOL_HEAT || key == KEY_IAQ_HOME_SPA_HEAT;
+}
+
+inline bool heater_enable_allowed(uint8_t key, int current_page, int water_mode) {
+  if (!is_heater_key(key)) return false;
+  if (current_page != IAQ_PAGE_HOME) return false;
+  if (key == KEY_IAQ_HOME_SPA_HEAT && water_mode != WATER_MODE_SPA) return false;
+  return true;
+}
+
 // Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
 // the menu/display and never actuate equipment, so they are the ONLY keys this
 // build will transmit. Equipment keys (pump 0x02, spa 0x01, pool heater 0x12,

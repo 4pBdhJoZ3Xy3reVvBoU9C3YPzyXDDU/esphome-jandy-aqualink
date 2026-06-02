@@ -323,3 +323,35 @@ def is_device_toggle_allowed(key: int) -> bool:
     """True only for the allowlisted DEVICES-page toggle keys (Spa Light, Extra
     Aux, Sprinklers). Page-scoped: the caller must also confirm page == DEVICES."""
     return key in _DEVICE_TOGGLE_KEYS
+
+
+# --- Heater on/off (HOME page) ----------------------------------------------
+#
+# Heaters are the highest-stakes control. HOME-page keycodes: Pool Heat 0x13,
+# Spa Heat 0x14 (keycode 0x11 + home index 2/3). PAGE-SCOPED: 0x13 is the
+# VSP-adjust on DEVICES and 0x14 is Pool Heat on DEVICES, so a heater key must
+# ONLY ever be sent on HOME. Spa Heat additionally must never be enabled outside
+# spa mode (water_mode 3). The panel runs the thermostat once a heater is enabled.
+KEY_IAQ_HOME_POOL_HEAT = 0x13
+KEY_IAQ_HOME_SPA_HEAT = 0x14
+WATER_MODE_SPA = 3
+
+_HEATER_KEYS = frozenset({KEY_IAQ_HOME_POOL_HEAT, KEY_IAQ_HOME_SPA_HEAT})
+
+
+def is_heater_key(key: int) -> bool:
+    """True only for the two HOME-page heater keycodes (Pool Heat, Spa Heat)."""
+    return key in _HEATER_KEYS
+
+
+def heater_enable_allowed(key: int, current_page: int, water_mode: int) -> bool:
+    """The full heater on/off safety gate. A heater key is honored ONLY on the HOME
+    page (0x13/0x14 are other equipment elsewhere), and Spa Heat (0x14) ONLY while
+    the panel is in spa mode (water_mode 3). Pool Heat is allowed on HOME in any mode."""
+    if not is_heater_key(key):
+        return False
+    if current_page != IAQ_PAGE_HOME:
+        return False
+    if key == KEY_IAQ_HOME_SPA_HEAT and water_mode != WATER_MODE_SPA:
+        return False
+    return True
