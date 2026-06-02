@@ -95,6 +95,11 @@ class IaqReader:
         self.has_pool = False
         self.has_spa = False
         self.water_mode = 0  # current home-page water label: 0 none, 2 pool, 3 spa
+        self.pool_heat_enabled = False
+        self.spa_heat_enabled = False
+        self.has_pool_heat = False
+        self.has_spa_heat = False
+        self._btn_state = {}  # index -> state, for the page being loaded
         self.current_page = 0  # page type of the most recently completed page
         self.pump_rpm = 0
         self.has_pump_rpm = False
@@ -109,6 +114,7 @@ class IaqReader:
             data = frame.data
             self._page_type = data[0] if len(data) >= 1 else 0
             self._lines = {}
+            self._btn_state = {}
         elif cmd == CMD_IAQ_PAGE_MSG:
             data = frame.data
             if len(data) < 1:
@@ -116,6 +122,10 @@ class IaqReader:
             idx = data[0]
             text = "".join(chr(b) for b in data[1:] if 0x20 <= b <= 0x7E)
             self._lines[idx] = text
+        elif cmd == CMD_IAQ_PAGE_BUTTON:
+            data = frame.data
+            if len(data) >= 2:
+                self._btn_state[data[0]] = data[1]
         elif cmd == CMD_IAQ_PAGE_END:
             self.current_page = self._page_type  # promote the displayed page
             if self._page_type == IAQ_PAGE_HOME:
@@ -146,6 +156,13 @@ class IaqReader:
                 self.spa = val
                 self.has_spa = True
                 self.water_mode = 3
+        # HOME heater buttons: index 2 Pool Heat, index 3 Spa Heat; state 3 = on.
+        if 2 in self._btn_state:
+            self.pool_heat_enabled = self._btn_state[2] == 3
+            self.has_pool_heat = True
+        if 3 in self._btn_state:
+            self.spa_heat_enabled = self._btn_state[3] == 3
+            self.has_spa_heat = True
 
     def _commit_status(self):
         # The STATUS page lists the pump as text lines: "    RPM: 2750" and
