@@ -165,6 +165,7 @@ void IaqReader::feed(const Frame &f) {
   if (cmd == 0x23) {  // CMD_IAQ_PAGE_START: page type in data[0]
     page_type_ = f.data_len() >= 1 ? f.data()[0] : 0;
     for (int i = 0; i < MAX_LINES; ++i) present_[i] = false;
+    for (int i = 0; i < MAX_LINES; ++i) btn_present_[i] = false;
   } else if (cmd == 0x25) {  // CMD_IAQ_PAGE_MSG: data[0]=index, data[1:]=text+NUL
     if (f.data_len() < 1) return;
     int idx = f.data()[0];
@@ -176,6 +177,14 @@ void IaqReader::feed(const Frame &f) {
     }
     lines_[idx][o] = '\0';
     present_[idx] = true;
+  } else if (cmd == 0x24) {  // CMD_IAQ_PAGE_BUTTON: data[0]=index, data[1]=state
+    if (f.data_len() >= 2) {
+      int idx = f.data()[0];
+      if (idx >= 0 && idx < MAX_LINES) {
+        btn_state_[idx] = f.data()[1];
+        btn_present_[idx] = true;
+      }
+    }
   } else if (cmd == 0x28) {  // CMD_IAQ_PAGE_END
     current_page_ = page_type_;  // promote the displayed page
     if (page_type_ == 0x01) commit_home();  // 0x01 = HOME page
@@ -207,6 +216,9 @@ void IaqReader::commit_home() {
       water_mode_ = 3;
     }
   }
+  // HOME heater buttons: index 2 Pool Heat, index 3 Spa Heat; state 3 = on.
+  if (btn_present_[BTN_POOL_HEAT]) { pool_heat_enabled_ = (btn_state_[BTN_POOL_HEAT] == 3); has_pool_heat_ = true; }
+  if (btn_present_[BTN_SPA_HEAT]) { spa_heat_enabled_ = (btn_state_[BTN_SPA_HEAT] == 3); has_spa_heat_ = true; }
 }
 
 void IaqReader::commit_status() {
@@ -512,9 +524,14 @@ bool selftest(std::string &detail) {
     feed_one({0x10, 0x02, 0x33, 0x25, 0x04, 0x53, 0x70, 0x61, 0x20, 0x54, 0x65, 0x6D, 0x70, 0x00, 0x48,
               0x10, 0x03});
     feed_one({0x10, 0x02, 0x33, 0x25, 0x00, 0x38, 0x38, 0xC2, 0xBA, 0x00, 0x56, 0x10, 0x03});
+    // Minimal HOME buttons (decode reads only data[0]=index, data[1]=state): Pool
+    // Heat (idx 2) enabled (state 3); Spa Heat (idx 3) off (state 0).
+    feed_one({0x10, 0x02, 0x33, 0x24, 0x02, 0x03, 0x00, 0x0B, 0x79, 0x10, 0x03});
+    feed_one({0x10, 0x02, 0x33, 0x24, 0x03, 0x00, 0x00, 0x05, 0x71, 0x10, 0x03});
     feed_one({0x10, 0x02, 0x33, 0x28, 0x05, 0x1F, 0x1A, 0x08, 0x1D, 0xD0, 0x10, 0x03});
     if (ir.state.has_spa && ir.state.spa == 88 && ir.state.has_air && ir.state.air == 156 &&
-        !ir.state.has_pool && ir.water_mode() == 3 && ir.current_page() == 0x01)
+        !ir.state.has_pool && ir.water_mode() == 3 && ir.current_page() == 0x01 &&
+        ir.has_pool_heat() && ir.pool_heat_enabled() && ir.has_spa_heat() && !ir.spa_heat_enabled())
       ok++;
   }
 

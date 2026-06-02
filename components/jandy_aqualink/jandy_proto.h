@@ -243,6 +243,10 @@ class IaqReader {
   // Page type of the most recently completed page (set on page end). Used to gate
   // navigation, e.g. the Other Devices key is only honored from the HOME page.
   int current_page() const { return current_page_; }
+  bool has_pool_heat() const { return has_pool_heat_; }
+  bool pool_heat_enabled() const { return pool_heat_enabled_; }
+  bool has_spa_heat() const { return has_spa_heat_; }
+  bool spa_heat_enabled() const { return spa_heat_enabled_; }
 
  private:
   void commit_home();
@@ -252,6 +256,12 @@ class IaqReader {
   uint8_t page_type_ = 0;
   uint8_t current_page_ = 0;
   int water_mode_ = 0;
+  // HOME-page heater button indices (this panel's home layout) and decoded state.
+  static constexpr int BTN_POOL_HEAT = 2, BTN_SPA_HEAT = 3;
+  bool pool_heat_enabled_ = false, spa_heat_enabled_ = false;
+  bool has_pool_heat_ = false, has_spa_heat_ = false;
+  uint8_t btn_state_[MAX_LINES] = {0};
+  bool btn_present_[MAX_LINES] = {false};
   bool present_[MAX_LINES] = {false};
   char lines_[MAX_LINES][LINE_LEN]{};
 };
