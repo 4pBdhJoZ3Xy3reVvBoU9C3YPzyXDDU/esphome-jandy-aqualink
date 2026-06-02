@@ -93,9 +93,15 @@ independent and can swap.
   Solar Light (renamed, confirmed energizing live); Spa Light and Sprinklers send
   correctly on the bus but are physically disconnected (unplugged fixture / legacy
   removed controller). Page-guard + allowlist proven on harmless gear.
-- **Session 9** `SESSION-9-heaters-kickoff.md` — pool + spa heat on/off +
-  setpoint. Value-set machinery already proven; needs a SET_TEMP nav survey and a
-  careful live test. Highest stakes among the control builds.
+- **Session 9** `SESSION-9-heaters-kickoff.md` — heater ON/OFF (pool + spa)
+  SHIPPED + founder-live-tested 2026-06-02 (commits `a024f55`..`b3547f2`). Both
+  heaters proven; the spa heater physically fired. Also added a "Switch to Spa
+  Mode" button (mirror of Switch to Pool Mode) and fixed a flaky spa-mode source
+  (now gated on the reliable 0x08 `cs_spa_` bit). FINDING: the HOME heat button is
+  a pure on/off toggle, not a setpoint opener, so the temperature SETPOINT is a
+  Phase 2 build via the DEVICES route (DEVICES Pool Heat 0x14 / Spa Heat 0x15 ->
+  SET_TEMP 0x39). Founder needs spa target 94F (not the 104F max), so the setpoint
+  is concretely needed. Spec `2026-06-02-heaters-design.md`, plan `2026-06-02-heater-onoff-and-survey.md`.
 - **Session 10** `SESSION-10-schedule-decision-kickoff.md` — deal with the
   panel's stored schedule, gated on Session 7. Likely solved by HA-as-scheduler
   (override / guard the salt floor) rather than editing the panel. The dead
