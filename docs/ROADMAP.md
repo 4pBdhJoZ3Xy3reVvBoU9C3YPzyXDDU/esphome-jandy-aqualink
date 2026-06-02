@@ -87,8 +87,12 @@ independent and can swap.
   (presence-only now) and added a "Pool Pump Auto-Refresh" switch + 15-min
   interval. The watch is running; next session reads the ~24h `Pool Pump Speed`
   history to map the panel's stored schedule, then makes the Session 10 decision.
-- **Session 8** `SESSION-8-easy-toggles-kickoff.md` — spa light / aux /
-  sprinklers DEVICES-page toggles. Low-stakes; exercises the page-context guard.
+- **Session 8** `SESSION-8-easy-toggles-kickoff.md` — SHIPPED 2026-06-02
+  (commits `67c8541`..`675f586`). Gated Spa Light / Solar Light / Sprinklers
+  DEVICES-page toggles, founder-watched live test. Discoveries: "Extra Aux" is the
+  Solar Light (renamed, confirmed energizing live); Spa Light and Sprinklers send
+  correctly on the bus but are physically disconnected (unplugged fixture / legacy
+  removed controller). Page-guard + allowlist proven on harmless gear.
 - **Session 9** `SESSION-9-heaters-kickoff.md` — pool + spa heat on/off +
   setpoint. Value-set machinery already proven; needs a SET_TEMP nav survey and a
   careful live test. Highest stakes among the control builds.
