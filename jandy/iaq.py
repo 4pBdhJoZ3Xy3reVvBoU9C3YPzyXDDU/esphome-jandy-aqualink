@@ -13,6 +13,7 @@ for the label at index 4) and against real frames from this RS panel.
 """
 
 CMD_IAQ_PAGE_START = 0x23
+CMD_IAQ_PAGE_BUTTON = 0x24
 CMD_IAQ_PAGE_MSG = 0x25
 CMD_IAQ_PAGE_END = 0x28
 IAQ_PAGE_HOME = 0x01
@@ -22,6 +23,10 @@ IAQ_PAGE_SET_VSP = 0x1E
 
 # A temperature value sits this many indices before its label line.
 _VALUE_OFFSET = 4
+
+# HOME-page heater button indices (this panel's home layout): Pool Heat, Spa Heat.
+_BTN_POOL_HEAT = 2
+_BTN_SPA_HEAT = 3
 
 # Human names for iAqualink page types (AqualinkD aq_serial.h IAQ_PAGE_*), used
 # for legible survey logging and for gating navigation by current page.
@@ -156,12 +161,12 @@ class IaqReader:
                 self.spa = val
                 self.has_spa = True
                 self.water_mode = 3
-        # HOME heater buttons: index 2 Pool Heat, index 3 Spa Heat; state 3 = on.
-        if 2 in self._btn_state:
-            self.pool_heat_enabled = self._btn_state[2] == 3
+        # HOME heater buttons: state 3 = on.
+        if _BTN_POOL_HEAT in self._btn_state:
+            self.pool_heat_enabled = self._btn_state[_BTN_POOL_HEAT] == 3
             self.has_pool_heat = True
-        if 3 in self._btn_state:
-            self.spa_heat_enabled = self._btn_state[3] == 3
+        if _BTN_SPA_HEAT in self._btn_state:
+            self.spa_heat_enabled = self._btn_state[_BTN_SPA_HEAT] == 3
             self.has_spa_heat = True
 
     def _commit_status(self):
@@ -179,9 +184,6 @@ class IaqReader:
                 if v is not None:
                     self.pump_watts = v
                     self.has_pump_watts = True
-
-
-CMD_IAQ_PAGE_BUTTON = 0x24
 
 
 class IaqButton:
