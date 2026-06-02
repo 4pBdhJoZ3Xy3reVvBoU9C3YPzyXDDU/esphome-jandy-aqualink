@@ -75,6 +75,23 @@ inline bool heater_enable_allowed(uint8_t key, int current_page, int water_mode)
   return true;
 }
 
+// Heater temperature setpoint (SET_TEMP page 0x39). Reuses the pump value-set
+// handshake; AqualinkD uses the SAME num2iaqtRSset encoder for RPM and setpoint.
+// PAGE-SCOPED: 0x14 is Spa Heat on HOME, Pool Heat on DEVICES, Set Temp on MENU,
+// so each keycode is gated to its page. The 0x24 value frame goes out ONLY on
+// SET_TEMP. Captured oracles (iaqtouch.h Set Temp pool): 50F, 100F.
+static constexpr uint8_t IAQ_PAGE_SET_TEMP = 0x39, IAQ_PAGE_MENU = 0x0F;
+static constexpr uint8_t KEY_IAQ_DEVICES_POOL_HEAT = 0x14, KEY_IAQ_DEVICES_SPA_HEAT = 0x15;
+static constexpr uint8_t KEY_IAQT_SET_TEMP = 0x14;  // MENU "Set Temp" (KEY04)
+static constexpr int POOL_TEMP_MIN = 45, POOL_TEMP_MAX = 90, SPA_TEMP_MIN = 80, SPA_TEMP_MAX = 104;
+
+inline int pool_setpoint_check(int t) { return t < POOL_TEMP_MIN ? POOL_TEMP_MIN : (t > POOL_TEMP_MAX ? POOL_TEMP_MAX : t); }
+inline int spa_setpoint_check(int t) { return t < SPA_TEMP_MIN ? SPA_TEMP_MIN : (t > SPA_TEMP_MAX ? SPA_TEMP_MAX : t); }
+inline bool settemp_write_allowed(uint8_t current_page) { return current_page == IAQ_PAGE_SET_TEMP; }
+
+void num2iaqt_temp(uint16_t temp, uint8_t out[6]);                        // ASCII digits, 6-byte field
+size_t build_settemp_frame(uint16_t temp, uint8_t *out, size_t out_cap);  // 0x24 frame; returns 24
+
 // Safe, display-only navigation keys (AqualinkD source/aq_serial.h). These move
 // the menu/display and never actuate equipment, so they are the ONLY keys this
 // build will transmit. Equipment keys (pump 0x02, spa 0x01, pool heater 0x12,

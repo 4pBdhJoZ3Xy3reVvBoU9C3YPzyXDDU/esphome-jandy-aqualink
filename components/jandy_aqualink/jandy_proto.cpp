@@ -291,6 +291,36 @@ size_t build_vsp_set_frame(uint16_t rpm, uint8_t *out, size_t out_cap) {
 
 bool vsp_adjust_allowed(uint8_t current_page) { return current_page == IAQ_PAGE_DEVICES; }
 
+void num2iaqt_temp(uint16_t temp, uint8_t out[6]) {
+  // ASCII digits, then pad to 6: a '0' at index 4 for sub-1000 values, else NUL
+  // (AqualinkD num2iaqtRSset). Reproduces the captured Set-Temp frames.
+  char tmp[6];
+  int d = 0;
+  if (temp == 0) {
+    tmp[d++] = '0';
+  } else {
+    while (temp > 0 && d < 6) { tmp[d++] = static_cast<char>('0' + (temp % 10)); temp /= 10; }
+  }
+  for (int i = 0; i < d; ++i) out[i] = static_cast<uint8_t>(tmp[d - 1 - i]);
+  for (int i = d; i < 6; ++i) out[i] = (i == 4 && d <= 3) ? 0x30 : 0x00;
+}
+
+size_t build_settemp_frame(uint16_t temp, uint8_t *out, size_t out_cap) {
+  if (out_cap < 24) return 0;
+  uint8_t field[6];
+  num2iaqt_temp(temp, field);
+  size_t i = 0;
+  out[i++] = DLE; out[i++] = STX; out[i++] = 0x00; out[i++] = 0x24; out[i++] = 0x31;
+  for (int k = 0; k < 6; ++k) out[i++] = field[k];
+  for (int k = 0; k < 10; ++k) out[i++] = 0xcd;
+  uint32_t s = 0;
+  for (size_t k = 0; k < i; ++k) s += out[k];
+  out[i++] = static_cast<uint8_t>(s & 0xFF);
+  out[i++] = DLE;
+  out[i++] = ETX;
+  return i;  // 24
+}
+
 // --- self-test over the same vectors the Python suite uses ---
 
 bool selftest(std::string &detail) {
@@ -438,6 +468,31 @@ bool selftest(std::string &detail) {
         !vsp_adjust_allowed(IAQ_PAGE_SET_VSP))
       ok++;
     else { detail += " VSPGATE"; }
+  }
+
+  // Heater setpoint: build_settemp_frame reproduces the captured Set-Temp(pool)
+  // frames (50F, 100F), and settemp_write_allowed gates to SET_TEMP only.
+  {
+    struct TV { uint16_t t; uint8_t exp[24]; };
+    static const TV tv[] = {
+        {50,  {0x10,0x02,0x00,0x24,0x31,0x35,0x30,0x00,0x00,0x30,0x00,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xfe,0x10,0x03}},
+        {100, {0x10,0x02,0x00,0x24,0x31,0x31,0x30,0x30,0x00,0x30,0x00,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0xcd,0x2a,0x10,0x03}},
+    };
+    for (const auto &v : tv) {
+      total++;
+      uint8_t out[32];
+      size_t n = build_settemp_frame(v.t, out, sizeof(out));
+      bool pass = (n == 24);
+      for (int i = 0; pass && i < 24; ++i)
+        if (out[i] != v.exp[i]) pass = false;
+      if (pass) ok++;
+      else detail += (v.t == 50 ? " TEMP50" : " TEMP100");
+    }
+    total++;
+    if (settemp_write_allowed(IAQ_PAGE_SET_TEMP) && !settemp_write_allowed(IAQ_PAGE_DEVICES) &&
+        !settemp_write_allowed(IAQ_PAGE_HOME))
+      ok++;
+    else detail += " TEMPGATE";
   }
 
   // iAqualink HOME-page decode: spa=88, air=156 from real captured frames.
