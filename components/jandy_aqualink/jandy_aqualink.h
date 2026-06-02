@@ -217,7 +217,8 @@ class JandyAqualink : public Component {
   volatile int iaq_heater_key_{-1};
 
   // Survey one-shot press: -1 idle, else the keycode armed for iaq_survey_page_.
-  volatile int16_t iaq_survey_key_{-1};
+  // Both volatile int, matching the iAq sequence key/step fields.
+  volatile int iaq_survey_key_{-1};
   volatile int iaq_survey_page_{-1};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_

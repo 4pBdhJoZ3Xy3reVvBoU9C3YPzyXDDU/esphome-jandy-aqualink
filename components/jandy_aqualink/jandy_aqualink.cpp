@@ -182,7 +182,7 @@ void JandyAqualink::task_loop() {
                        jandy::iaq_page_name(static_cast<uint8_t>(page)));
             } else {
               send_iaq_ack_(0x00);
-              ESP_LOGW(TAG, "survey REFUSED at transmit: on 0x%02X (%s), expected 0x%02X", page,
+              ESP_LOGW(TAG, "survey REFUSED at transmit: actual page 0x%02X (%s), expected 0x%02X", page,
                        jandy::iaq_page_name(static_cast<uint8_t>(page)), sv_page);
             }
             portENTER_CRITICAL(&mux_);
