@@ -130,10 +130,14 @@ need no change.
 
 ## The brain's behaviors
 
+Everything except the watch loop is instant: phase boundaries, spa mode changes, manual
+presses, and restarts all act the moment their trigger happens. Only the watch loop is
+periodic, because the pump speed is not announced on the bus and has to be actively read.
+
 1. Phase scheduler. At each boundary (08:00, 10:00, 20:00, 22:00) set the phase's target
    pump speed and desired cleaner state, and apply them immediately. Conditions: scheduler
    armed, not in spa mode.
-2. Watch and correct. Every few minutes (default 5, tunable), read the pump speed, and if
+2. Watch and correct. Every 2 minutes, read the pump speed, and if
    it is off the current target by more than a tolerance, re-apply the target. Conditions:
    scheduler armed, not in spa mode, not within a manual hold. A correction rate cap (for
    example no more than a handful per hour) stops any pathological fight and raises an alert
@@ -256,7 +260,9 @@ Not used (unreliable on this panel): `binary_sensor.pool_rs485_bridge_pool_heat_
   net, add the correction rate cap and any pump health alert, document.
 - Later (out of scope for the first cut): pool and spa heater coordination (run the pump
   high enough while heating, the setpoints are already controllable); salt cell reading
-  (decode the cell's own bus frames for real chlorine visibility); energy reporting.
+  (decode the cell's own bus frames for real chlorine visibility); instant panel-move
+  detection (sniff the panel's own pump speed command on the bus so a correction is immediate,
+  removing the read patrol for pump speed); energy reporting.
 
 ## Testing approach
 
@@ -264,7 +270,7 @@ Not used (unreliable on this panel): `binary_sensor.pool_rs485_bridge_pool_heat_
   proves the scheduler permission is correctly narrow.
 - Accelerated schedule test (Phase B): shift phase times near now, or fire the phase
   automations by hand, and watch the pump track each target. Force a wrong speed and confirm
-  the watch loop restores it within the interval.
+  the watch loop restores it within about 2 minutes.
 - Coexistence test (Phase C): switch to spa, confirm the brain stops touching the pump and
   cleaner; switch back to pool, confirm the filter pump comes back and the schedule resumes.
   Use the swim boost and confirm it holds until the next phase.
@@ -274,8 +280,7 @@ Not used (unreliable on this panel): `binary_sensor.pool_rs485_bridge_pool_heat_
 
 ## Open questions and deferred decisions
 
-- Watch interval default: 5 minutes proposed. Tune against how chatty the temp blink feels
-  and how tight the override needs to be.
+- Watch interval: decided at 2 minutes, everywhere, all the time (founder, 2026-06-03).
 - Cleaner speed: 2750 (Normal) assumed for both clean windows. If the cleaner works at a
   lower flow, drop it for energy. Tunable later.
 - Whether to retire the firmware 15-min auto-refresh in favor of HA driven reads, or keep
