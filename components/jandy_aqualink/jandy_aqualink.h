@@ -235,6 +235,13 @@ class JandyAqualink : public Component {
   volatile int iaq_settemp_step_{0};
   volatile int iaq_settemp_key_{-1};
   volatile int iaq_settemp_val_{0};
+  // Screen-open retry: the DEVICES heat-item press opens SET_TEMP only ~half the time,
+  // so step 4 re-presses until the SET_TEMP page-start arrives, capped, then aborts.
+  // page_seen = page-start seen this attempt; wait = polls counted in step 4; retries =
+  // re-press count.
+  volatile bool iaq_settemp_page_seen_{false};
+  volatile int iaq_settemp_wait_{0};
+  volatile int iaq_settemp_retries_{0};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records

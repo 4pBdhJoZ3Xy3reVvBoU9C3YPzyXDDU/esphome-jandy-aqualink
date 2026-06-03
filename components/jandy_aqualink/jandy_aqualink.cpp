@@ -207,9 +207,10 @@ void JandyAqualink::task_loop() {
         settemp_step = iaq_settemp_step_;
         portEXIT_CRITICAL(&mux_);
         if (settemp_step != 0) {
-          if (f.cmd() != 0x30) {  // DIAG (revert after): log every non-poll frame during the setpoint sequence
-            uint8_t pt = (f.cmd() == 0x23 && f.data_len() >= 1) ? f.data()[0] : 0xFF;
-            ESP_LOGW(TAG, "settemp DIAG: rx cmd=0x%02X newpage=0x%02X step=%d", f.cmd(), pt, settemp_step);
+          // The screen-open is timing-flaky; record when the SET_TEMP page-start
+          // actually arrives so step 4 can tell "opening" from "missed" and re-press.
+          if (f.cmd() == 0x23 && f.data_len() >= 1 && f.data()[0] == jandy::IAQ_PAGE_SET_TEMP) {
+            iaq_settemp_page_seen_ = true;
           }
           if (f.cmd() == jandy::CMD_IAQ_CTRL_READY && settemp_step == 5) {
             send_settemp_set_(static_cast<uint16_t>(iaq_settemp_val_));
@@ -549,6 +550,9 @@ void JandyAqualink::set_heater_setpoint(bool is_spa, uint16_t temp) {
   }
   iaq_settemp_key_ = key;
   iaq_settemp_val_ = clamped;
+  iaq_settemp_page_seen_ = false;
+  iaq_settemp_wait_ = 0;
+  iaq_settemp_retries_ = 0;
   iaq_settemp_step_ = 1;
   portEXIT_CRITICAL(&mux_);
   ESP_LOGW(TAG, "setpoint: start sequence -> %s %dF (requested %u)", is_spa ? "spa" : "pool", clamped, temp);
@@ -791,16 +795,34 @@ void JandyAqualink::advance_settemp_sequence_() {
         send_iaq_ack_(0x00);  // wait for the panel to land on DEVICES
       }
       break;
-    case 4:  // on SET_TEMP -> request the control slot (key 0x80). SAFETY: gate the page.
+    case 4: {  // on SET_TEMP -> request the control slot (0x80). The heat-item press
+               // opens SET_TEMP only ~half the time; if the page-start never arrives we
+               // re-press it on DEVICES, capped, then abort. SAFETY: 0x80 only once the
+               // page is confirmed SET_TEMP; the heat item only while page == DEVICES.
+      constexpr int SETTEMP_OPEN_TIMEOUT = 20;   // ~4s of polls to see the page-start before a re-press
+      constexpr int SETTEMP_MAX_RETRIES = 6;
       if (jandy::settemp_write_allowed(static_cast<uint8_t>(page))) {
-        ESP_LOGW(TAG, "settemp DIAG step4: SET_TEMP(0x%02X) confirmed -> sending control request 0x80", page);  // DIAG (revert after)
         send_iaq_ack_(0x80);
         iaq_settemp_step_ = 5;
+      } else if (iaq_settemp_page_seen_) {
+        send_iaq_ack_(0x00);  // SET_TEMP opened (page-start seen); wait for it to finish loading
+      } else if (page == jandy::IAQ_PAGE_DEVICES && ++iaq_settemp_wait_ >= SETTEMP_OPEN_TIMEOUT) {
+        if (iaq_settemp_retries_++ < SETTEMP_MAX_RETRIES) {
+          send_iaq_ack_(static_cast<uint8_t>(iaq_settemp_key_));  // the press did not open SET_TEMP; re-press
+          ESP_LOGW(TAG, "setpoint: SET_TEMP did not open, re-pressed heat item 0x%02X on DEVICES (retry %d)",
+                   iaq_settemp_key_, iaq_settemp_retries_);
+          iaq_settemp_wait_ = 0;
+        } else {
+          ESP_LOGW(TAG, "setpoint ABORTED: SET_TEMP never opened after %d re-presses", SETTEMP_MAX_RETRIES);
+          iaq_settemp_step_ = 0;
+          iaq_settemp_key_ = -1;
+          send_iaq_ack_(0x00);
+        }
       } else {
-        ESP_LOGW(TAG, "settemp DIAG step4: page=0x%02X not SET_TEMP yet, waiting", page);  // DIAG (revert after)
-        send_iaq_ack_(0x00);  // wait for SET_TEMP (or the heat item only toggled; times out safe)
+        send_iaq_ack_(0x00);  // on DEVICES and still counting, or transitioning between pages
       }
       break;
+    }
     case 5:  // waiting for the panel's 0x31; the 0x24 goes out there, not on a poll
       send_iaq_ack_(0x00);
       break;
