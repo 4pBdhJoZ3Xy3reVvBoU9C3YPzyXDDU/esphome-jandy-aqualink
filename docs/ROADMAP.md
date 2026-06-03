@@ -48,6 +48,26 @@ free iAqualink slot.
 
 ## Phase 3: setpoint control
 
+> **DONE (Session 9 Phase 2, 2026-06-03), origin/master `a2039e2`.** Heater
+> setpoints (pool + spa) ship via the value-set path, NOT the up/down menu-walk
+> sketched below: nav HOME -> Other Devices -> DEVICES (0x36) -> press the heat
+> item (Pool Heat `0x14` / Spa Heat `0x15`) -> SET_TEMP (`0x39`) -> `0x80` control
+> request -> panel grants `0x31` CTRL_READY -> `0x24` value frame (ASCII degree
+> digits, `num2iaqtRSset`) -> HOME. Gated by the master interlock + iAqualink
+> presence; HA `number` entities Pool/Spa Heat Setpoint (clamps 45-90 / 80-104).
+> Live-proven with the founder: the pool heater physically fired at target 90; the
+> spa heated and the panel auto-offed spa heat at its 94 setpoint, well below the
+> 104 ceiling (the proof, since the setpoint is unreadable). QUIRKS: SET_TEMP
+> renders blind to our 0x33 emulation (no setpoint readback, no body-select
+> buttons) so we write blind and confirm by heater behavior; the heat-item press
+> opens SET_TEMP only ~50% of the time (auto-retry added in `a2039e2`: re-press the
+> heat item on DEVICES if the SET_TEMP page-start does not arrive within ~4s); the
+> panel commits the SET_TEMP page slowly (page-end ~11-27s after the start) so a
+> write takes ~30s; the `*_heat_enabled` binary_sensors decode unreliably on this
+> panel (trust the panel's own heat light, not the sensor). Heater hardware =
+> Pentair MasterTemp commanded by the Jandy AquaLink; the AquaLink setpoint is the
+> governing target, the MasterTemp's 104 is just its ceiling.
+
 Once the menu-walk read loop is solid, extend it to change the pool and spa
 heater setpoints: navigate to the setpoint menu, press up or down while reading
 the displayed value back after each press, then commit. This is a write and must
