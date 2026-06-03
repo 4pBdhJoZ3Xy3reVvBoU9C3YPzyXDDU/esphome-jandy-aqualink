@@ -183,6 +183,32 @@ Defense in depth, so the water can never go stagnant:
   `automation.pool_bridge_offline_60min_hard` (plus thermal and wifi warnings). The brain
   reuses these rather than reinventing offline detection.
 
+## Coordination with the iAqualink re-online and panel simplification (planned)
+
+The founder plans, in the next few days, to bring the iAqualink 2.0 back online, map what the
+panel and the Jandy cloud hold, simplify the panel's stored programming down to one intentional
+failsafe program, and remove the rest. This strengthens the design.
+
+- A calmer override. The messy old programs are what nudge the pump roughly once an hour.
+  Stripping them out means the watch loop rarely has anything to correct, it just holds.
+- A deliberate net. The safety floor stops being an inherited mess and becomes one program we
+  choose. Recommended shape: filter pump at 2000 RPM (Low, above the salt floor) from 10:00 to
+  16:00 daily. When the brain is alive this sits inside the Day phase at the same speed, so the
+  two agree and never fight; when the brain is down, that one program alone still gives a daily
+  turnover plus six hours of chlorination. Safety rule: enter the failsafe program before or at
+  the same time as removing the others, so the net is never empty for a moment.
+
+Operating coordination (only one device may hold the 0x33 iAqualink seat at a time):
+- Before bringing the iAqualink 2.0 online, turn OFF the Pool Scheduler switch. That fully
+  stands the brain down, including the presence keeper, so it cannot fight the iAqualink for the
+  seat. Then turn iAqualink presence off and bring the unit online.
+- While the iAqualink is online, the brain is paused and the panel program carries the pool.
+- After mapping and editing, disconnect the iAqualink so the box reclaims the 0x33 seat, turn
+  presence back on, then turn the Pool Scheduler back on.
+- The mapping itself is the already-prepared bonus session: cloud-recon tooling at
+  `..\cloud-recon\`, the `pool_bus_sniff` switch for passive bus capture, and the kickoff doc
+  `docs/SESSION-iaqualink-reonline-and-sniff.md`.
+
 ## Firmware change (one small change)
 
 In `firmware/pool-bridge.yaml`: add a `switch` named "Pool Scheduler" (id
