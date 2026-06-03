@@ -118,6 +118,12 @@ class JandyAqualink : public Component {
   // DEVICES, Set Temp on MENU) can never fire on the wrong page. No value frame.
   void survey_press(uint8_t key, uint8_t expect_page);
 
+  // Set a heater target from HA. is_spa picks the body (clamp + DEVICES heat item):
+  // pool 45-90 via 0x14, spa 80-104 via 0x15. Gated by interlock + presence; runs a
+  // page-confirmed sequence (HOME -> DEVICES -> heat item -> SET_TEMP -> 0x80 ->
+  // 0x24 value -> HOME). The 0x24 frame is sent ONLY on SET_TEMP. One at a time.
+  void set_heater_setpoint(bool is_spa, uint16_t temp);
+
  protected:
   static void task_trampoline(void *arg);
   void task_loop();
@@ -129,6 +135,8 @@ class JandyAqualink : public Component {
   void advance_toggle_sequence_();   // core-1: drive the device-toggle sequence on each poll
   void advance_heater_sequence_();   // core-1: drive the heater on/off sequence on each poll
   void send_vsp_set_(uint16_t rpm);  // core-1: transmit the 0x24 value frame
+  void advance_settemp_sequence_();  // core-1: drive the setpoint sequence on each poll
+  void send_settemp_set_(uint16_t temp);  // core-1: transmit the 0x24 setpoint value frame
 
   int tx_pin_{19};
   int rx_pin_{22};
@@ -220,6 +228,13 @@ class JandyAqualink : public Component {
   // Both volatile int, matching the iAq sequence key/step fields.
   volatile int iaq_survey_key_{-1};
   volatile int iaq_survey_page_{-1};
+
+  // Setpoint sequence (multi-step, page-driven). 0 = idle, 1..7 = steps.
+  // iaq_settemp_key_ is the DEVICES heat item (0x14 pool / 0x15 spa); iaq_settemp_val_
+  // is the clamped target. Mutually exclusive with the other write-sequences.
+  volatile int iaq_settemp_step_{0};
+  volatile int iaq_settemp_key_{-1};
+  volatile int iaq_settemp_val_{0};
 
   // Passive decode + bus census (core-1 task only; not shared). reader_
   // accumulates temperatures from the panel's broadcast frames; census_ records

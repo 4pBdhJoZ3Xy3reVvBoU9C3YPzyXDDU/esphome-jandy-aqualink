@@ -374,6 +374,35 @@ number:
     optimistic: true
     set_action:
       - lambda: "id(jandy_comp).set_pump_rpm((uint16_t) x);"
+  # Heater temperature setpoints (Phase 2). Each starts the page-confirmed sequence
+  # (HOME -> DEVICES -> heat item -> SET_TEMP -> 0x80 -> 0x24 value -> HOME); the
+  # 0x24 value frame is sent ONLY on SET_TEMP. Gated by interlock + presence. Pool
+  # 45-90, spa 80-104 (clamped in firmware). mode: box so it does not actuate while
+  # dragging a slider; the write fires once on entry.
+  - platform: template
+    name: "Pool Heat Setpoint"
+    id: pool_heat_setpoint
+    icon: "mdi:radiator"
+    unit_of_measurement: "°F"
+    min_value: 45
+    max_value: 90
+    step: 1
+    mode: box
+    optimistic: true
+    set_action:
+      - lambda: "id(jandy_comp).set_heater_setpoint(false, (uint16_t) x);"
+  - platform: template
+    name: "Spa Heat Setpoint"
+    id: spa_heat_setpoint
+    icon: "mdi:hot-tub"
+    unit_of_measurement: "°F"
+    min_value: 80
+    max_value: 104
+    step: 1
+    mode: box
+    optimistic: true
+    set_action:
+      - lambda: "id(jandy_comp).set_heater_setpoint(true, (uint16_t) x);"
 
 # When Auto-Refresh is on AND iAqualink presence is on, read the pump speed every
 # 15 minutes. read_pump_speed() is view-only (STATUS then auto-HOME); it actuates

@@ -200,6 +200,31 @@ void JandyAqualink::task_loop() {
           continue;  // this 0x33 frame fully handled by the survey one-shot
         }
 
+        // The setpoint sequence owns the iAq reply while active (mutually exclusive
+        // with the other write-sequences). The 0x24 value frame goes out on 0x31.
+        int settemp_step;
+        portENTER_CRITICAL(&mux_);
+        settemp_step = iaq_settemp_step_;
+        portEXIT_CRITICAL(&mux_);
+        if (settemp_step != 0) {
+          if (f.cmd() == jandy::CMD_IAQ_CTRL_READY && settemp_step == 5) {
+            send_settemp_set_(static_cast<uint16_t>(iaq_settemp_val_));
+            portENTER_CRITICAL(&mux_);
+            iaq_settemp_step_ = 6;
+            portEXIT_CRITICAL(&mux_);
+          } else if (f.cmd() == 0x30) {
+            advance_settemp_sequence_();
+          } else {
+            send_iaq_ack_(0x00);
+          }
+          iaq_reader_.feed(f);
+          portENTER_CRITICAL(&mux_);
+          iaq_current_page_ = iaq_reader_.current_page();
+          frames_++;
+          portEXIT_CRITICAL(&mux_);
+          continue;  // this 0x33 frame fully handled by the setpoint sequence
+        }
+
         // iAqualink: the panel sends its slot one frame at a time and waits for
         // an ACK before the next, so we reply in-slot to every 0x33 frame. The
         // ACK is inert (read-only) unless a key is armed AND this is the poll
@@ -277,6 +302,8 @@ void JandyAqualink::set_interlock(bool on) {
     iaq_heater_key_ = -1;
     iaq_survey_key_ = -1;    // and any armed survey press
     iaq_survey_page_ = -1;
+    iaq_settemp_step_ = 0;   // and any in-progress setpoint sequence
+    iaq_settemp_key_ = -1;
     iaq_return_home_ = false;
   }
   portEXIT_CRITICAL(&mux_);
@@ -389,7 +416,7 @@ void JandyAqualink::set_pump_rpm(uint16_t rpm) {
   }
   uint16_t clamped = jandy::rpm_check(rpm);
   portENTER_CRITICAL(&mux_);
-  if (iaq_toggle_step_ != 0 || iaq_heater_step_ != 0) {  // one write-sequence at a time
+  if (iaq_toggle_step_ != 0 || iaq_heater_step_ != 0 || iaq_settemp_step_ != 0 || iaq_survey_key_ >= 0) {  // one write-sequence at a time
     portEXIT_CRITICAL(&mux_);
     ESP_LOGW(TAG, "set_pump_rpm REFUSED: a device-toggle sequence is in progress (rpm=%u)", clamped);
     return;
@@ -414,7 +441,7 @@ void JandyAqualink::press_device_toggle(uint8_t keycode) {
     return;
   }
   portENTER_CRITICAL(&mux_);
-  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0) {  // one write-sequence at a time
+  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0 || iaq_settemp_step_ != 0 || iaq_survey_key_ >= 0) {  // one write-sequence at a time
     portEXIT_CRITICAL(&mux_);
     ESP_LOGW(TAG, "device toggle REFUSED: another sequence is in progress (key=0x%02X)", keycode);
     return;
@@ -451,7 +478,7 @@ void JandyAqualink::press_heater(uint8_t keycode) {
     return;
   }
   portENTER_CRITICAL(&mux_);
-  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0) {
+  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0 || iaq_settemp_step_ != 0 || iaq_survey_key_ >= 0) {
     portEXIT_CRITICAL(&mux_);
     ESP_LOGW(TAG, "heater REFUSED: another sequence is in progress (key=0x%02X)", keycode);
     return;
@@ -472,7 +499,7 @@ void JandyAqualink::survey_press(uint8_t key, uint8_t expect_page) {
     return;
   }
   portENTER_CRITICAL(&mux_);
-  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0) {
+  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0 || iaq_settemp_step_ != 0) {
     portEXIT_CRITICAL(&mux_);
     ESP_LOGW(TAG, "survey REFUSED: another sequence is in progress (key=0x%02X)", key);
     return;
@@ -497,6 +524,38 @@ void JandyAqualink::send_vsp_set_(uint16_t rpm) {
   size_t n = jandy::build_vsp_set_frame(rpm, out, sizeof(out));
   uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(out), n);
   ESP_LOGW(TAG, "VSP value frame sent: %u RPM (%u bytes)", rpm, static_cast<unsigned>(n));
+}
+
+void JandyAqualink::set_heater_setpoint(bool is_spa, uint16_t temp) {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "setpoint REFUSED: safety interlock is OFF (%s %u)", is_spa ? "spa" : "pool", temp);
+    return;
+  }
+  if (!iaq_presence_) {
+    ESP_LOGW(TAG, "setpoint REFUSED: iAqualink presence is OFF (%s %u)", is_spa ? "spa" : "pool", temp);
+    return;
+  }
+  int clamped = is_spa ? jandy::spa_setpoint_check(temp) : jandy::pool_setpoint_check(temp);
+  uint8_t key = is_spa ? jandy::KEY_IAQ_DEVICES_SPA_HEAT : jandy::KEY_IAQ_DEVICES_POOL_HEAT;
+  portENTER_CRITICAL(&mux_);
+  if (iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0 || iaq_settemp_step_ != 0 || iaq_survey_key_ >= 0) {
+    portEXIT_CRITICAL(&mux_);
+    ESP_LOGW(TAG, "setpoint REFUSED: another sequence is in progress (%s)", is_spa ? "spa" : "pool");
+    return;
+  }
+  iaq_settemp_key_ = key;
+  iaq_settemp_val_ = clamped;
+  iaq_settemp_step_ = 1;
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "setpoint: start sequence -> %s %dF (requested %u)", is_spa ? "spa" : "pool", clamped, temp);
+}
+
+// core-1: transmit the 0x24 setpoint value frame on the bus.
+void JandyAqualink::send_settemp_set_(uint16_t temp) {
+  uint8_t out[32];
+  size_t n = jandy::build_settemp_frame(temp, out, sizeof(out));
+  uart_write_bytes(JANDY_UART, reinterpret_cast<const char *>(out), n);
+  ESP_LOGW(TAG, "setpoint value frame sent: %uF (%u bytes)", temp, static_cast<unsigned>(n));
 }
 
 // core-1: advance one step of the gated pump-set sequence. Called from the iAq
@@ -683,6 +742,79 @@ void JandyAqualink::advance_heater_sequence_() {
     default:
       iaq_heater_step_ = 0;
       iaq_heater_key_ = -1;
+      send_iaq_ack_(0x00);
+      break;
+  }
+}
+
+// core-1: advance one step of the gated setpoint sequence. Mirrors advance_set_sequence_
+// (the pump value-set) but navigates to SET_TEMP via the DEVICES heat item and writes a
+// temperature. SAFETY: the page-scoped heat item (0x14/0x15) is sent ONLY when page ==
+// DEVICES, and the 0x24 value frame ONLY when page == SET_TEMP (settemp_write_allowed),
+// both re-checked at the transmit point. Interlock off aborts. The 0x24 itself goes out
+// on the panel's 0x31, handled in task_loop. SET_TEMP is blind on this panel (no readback),
+// so there is no STATUS read-back step; the live test confirms via heater behavior.
+void JandyAqualink::advance_settemp_sequence_() {
+  if (!interlock_) {
+    ESP_LOGW(TAG, "setpoint aborted at step %d: interlock OFF", iaq_settemp_step_);
+    iaq_settemp_step_ = 0;
+    iaq_settemp_key_ = -1;
+    send_iaq_ack_(0x00);
+    return;
+  }
+  int page = iaq_reader_.current_page();
+  switch (iaq_settemp_step_) {
+    case 1:  // go HOME first (deterministic start)
+      send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      iaq_settemp_step_ = 2;
+      break;
+    case 2:  // on HOME -> open Other Devices; else retry HOME
+      if (page == jandy::IAQ_PAGE_HOME) {
+        send_iaq_ack_(jandy::KEY_IAQT_OTHER_DEVICES);
+        iaq_settemp_step_ = 3;
+      } else {
+        send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      }
+      break;
+    case 3:  // on DEVICES -> press the heat item. SAFETY: only on DEVICES (0x36).
+      if (page == jandy::IAQ_PAGE_DEVICES) {
+        send_iaq_ack_(static_cast<uint8_t>(iaq_settemp_key_));
+        ESP_LOGW(TAG, "setpoint: pressed heat item 0x%02X on DEVICES", iaq_settemp_key_);
+        iaq_settemp_step_ = 4;
+      } else if (page == jandy::IAQ_PAGE_HOME) {
+        send_iaq_ack_(jandy::KEY_IAQT_OTHER_DEVICES);  // not there yet, retry nav
+      } else {
+        send_iaq_ack_(0x00);  // wait for the panel to land on DEVICES
+      }
+      break;
+    case 4:  // on SET_TEMP -> request the control slot (key 0x80). SAFETY: gate the page.
+      if (jandy::settemp_write_allowed(static_cast<uint8_t>(page))) {
+        send_iaq_ack_(0x80);
+        iaq_settemp_step_ = 5;
+      } else {
+        send_iaq_ack_(0x00);  // wait for SET_TEMP (or the heat item only toggled; times out safe)
+      }
+      break;
+    case 5:  // waiting for the panel's 0x31; the 0x24 goes out there, not on a poll
+      send_iaq_ack_(0x00);
+      break;
+    case 6:  // value sent -> return HOME
+      send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      iaq_settemp_step_ = 7;
+      break;
+    case 7:  // on HOME -> done
+      if (page == jandy::IAQ_PAGE_HOME) {
+        ESP_LOGW(TAG, "setpoint sequence complete (key 0x%02X -> %dF)", iaq_settemp_key_, iaq_settemp_val_);
+        iaq_settemp_step_ = 0;
+        iaq_settemp_key_ = -1;
+        send_iaq_ack_(0x00);
+      } else {
+        send_iaq_ack_(jandy::KEY_IAQT_HOME);
+      }
+      break;
+    default:
+      iaq_settemp_step_ = 0;
+      iaq_settemp_key_ = -1;
       send_iaq_ack_(0x00);
       break;
   }
