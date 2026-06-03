@@ -207,6 +207,10 @@ void JandyAqualink::task_loop() {
         settemp_step = iaq_settemp_step_;
         portEXIT_CRITICAL(&mux_);
         if (settemp_step != 0) {
+          if (f.cmd() != 0x30) {  // DIAG (revert after): log every non-poll frame during the setpoint sequence
+            uint8_t pt = (f.cmd() == 0x23 && f.data_len() >= 1) ? f.data()[0] : 0xFF;
+            ESP_LOGW(TAG, "settemp DIAG: rx cmd=0x%02X newpage=0x%02X step=%d", f.cmd(), pt, settemp_step);
+          }
           if (f.cmd() == jandy::CMD_IAQ_CTRL_READY && settemp_step == 5) {
             send_settemp_set_(static_cast<uint16_t>(iaq_settemp_val_));
             portENTER_CRITICAL(&mux_);
@@ -789,9 +793,11 @@ void JandyAqualink::advance_settemp_sequence_() {
       break;
     case 4:  // on SET_TEMP -> request the control slot (key 0x80). SAFETY: gate the page.
       if (jandy::settemp_write_allowed(static_cast<uint8_t>(page))) {
+        ESP_LOGW(TAG, "settemp DIAG step4: SET_TEMP(0x%02X) confirmed -> sending control request 0x80", page);  // DIAG (revert after)
         send_iaq_ack_(0x80);
         iaq_settemp_step_ = 5;
       } else {
+        ESP_LOGW(TAG, "settemp DIAG step4: page=0x%02X not SET_TEMP yet, waiting", page);  // DIAG (revert after)
         send_iaq_ack_(0x00);  // wait for SET_TEMP (or the heat item only toggled; times out safe)
       }
       break;
