@@ -149,6 +149,14 @@ inline bool is_allowed_iaq_key(uint8_t key) {
          key == KEY_IAQ_AIR_BLOWER || key == KEY_IAQ_POOL_LIGHT;
 }
 
+// Keys the autonomous scheduler may send WITHOUT the master interlock: only Filter
+// Pump (0x11) and Cleaner (0x15). They share the iaq_press allowlist with the spa
+// toggle / blower / light, so the scheduler permission is scoped per-key here, NOT
+// by un-gating iaq_press wholesale. Mirror of jandy/frames.is_scheduler_safe_key.
+inline bool is_scheduler_safe_key(uint8_t key) {
+  return key == KEY_IAQ_FILTER_PUMP || key == KEY_IAQ_CLEANER;
+}
+
 // iAqualink global navigation keys (AqualinkD aq_serial.h KEY_IAQTCH_*): page
 // movement only, never equipment, on any page. 0x18 (Other Devices) is NOT here
 // because it is only safe from the HOME page; iaq_nav() gates it separately.

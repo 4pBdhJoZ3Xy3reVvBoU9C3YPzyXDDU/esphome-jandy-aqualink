@@ -162,6 +162,17 @@ def is_allowed_iaq_key(key: int) -> bool:
     return key in _ALLOWED_IAQ_KEYS
 
 
+_SCHEDULER_SAFE_KEYS = frozenset({KEY_IAQ_FILTER_PUMP, KEY_IAQ_CLEANER})
+
+
+def is_scheduler_safe_key(key: int) -> bool:
+    """Keys the autonomous scheduler may send WITHOUT the master interlock: only
+    Filter Pump (0x11) and Cleaner (0x15). These share the iaq_press allowlist with
+    the spa toggle / blower / light, so the scheduler permission is scoped per-key,
+    NOT by un-gating iaq_press wholesale."""
+    return key in _SCHEDULER_SAFE_KEYS
+
+
 # iAqualink global navigation keys (AqualinkD aq_serial.h KEY_IAQTCH_*). These are
 # page-level keys that move the display and never actuate equipment, on ANY page:
 # HOME 0x01, MENU 0x02, ONETOUCH 0x03, BACK 0x05, STATUS 0x06, PREV_PAGE 0x20,

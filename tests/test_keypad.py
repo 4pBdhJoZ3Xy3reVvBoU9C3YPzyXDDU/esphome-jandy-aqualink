@@ -102,6 +102,16 @@ class TestIaqEquipmentAllowlist(unittest.TestCase):
         for k in (0x13, 0x14, 0x18, 0x00, 0x09, 0x1D):
             self.assertFalse(is_allowed_iaq_key(k), f"0x{k:02X} must not be allowed")
 
+    def test_scheduler_safe_keys_are_only_pump_and_cleaner(self):
+        from jandy.frames import is_scheduler_safe_key
+
+        # The autonomous scheduler may send ONLY Filter Pump (0x11) and Cleaner (0x15)
+        # without the master interlock; everything else stays interlock-only.
+        self.assertTrue(is_scheduler_safe_key(0x11))
+        self.assertTrue(is_scheduler_safe_key(0x15))
+        for k in (0x12, 0x16, 0x17, 0x13, 0x14, 0x00):
+            self.assertFalse(is_scheduler_safe_key(k), f"0x{k:02X} must not be scheduler-safe")
+
 
 class TestSafeNavAllowlist(unittest.TestCase):
     def test_navigation_keys_are_allowed(self):

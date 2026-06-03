@@ -443,6 +443,13 @@ bool selftest(std::string &detail) {
       pass = false;
     if (is_allowed_iaq_key(0x13) || is_allowed_iaq_key(0x14) || is_allowed_iaq_key(0x09))
       pass = false;
+    // scheduler-safe keys: ONLY filter pump (0x11) + cleaner (0x15) may be sent
+    // unattended; spa 0x12 / blower 0x16 / light 0x17 / heaters 0x13 must be refused.
+    if (!is_scheduler_safe_key(0x11) || !is_scheduler_safe_key(0x15))
+      pass = false;
+    if (is_scheduler_safe_key(0x12) || is_scheduler_safe_key(0x16) ||
+        is_scheduler_safe_key(0x17) || is_scheduler_safe_key(0x13))
+      pass = false;
     // iAqualink navigation allowlist: the global keys pass; 0x18 (gated to HOME
     // by the caller) and every equipment/value keycode are refused here.
     const uint8_t nav_ok[] = {0x01, 0x02, 0x03, 0x05, 0x06, 0x20, 0x21};
