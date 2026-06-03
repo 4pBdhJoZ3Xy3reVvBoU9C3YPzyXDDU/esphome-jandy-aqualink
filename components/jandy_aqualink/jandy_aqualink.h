@@ -57,6 +57,8 @@ class JandyAqualink : public Component {
   // are ever sent on this path. Off by default.
   void set_iaq_presence(bool on);
   bool iaq_presence() const { return iaq_presence_; }
+  void set_scheduler_armed(bool on);
+  bool scheduler_armed() const { return scheduler_armed_; }
 
   // Promiscuous bus capture (read-only). When on, observe_frame logs every
   // non-poll frame on the bus raw, to record how a real iAqualink reads/writes
@@ -184,6 +186,10 @@ class JandyAqualink : public Component {
   // iAqualink read state. iaq_presence_ gates whether we answer 0x33 frames.
   uint8_t iaq_addr_{jandy::IAQ_DEV_ID};
   volatile bool iaq_presence_{false};
+  // Scheduler permission: when on, lets the autonomous HA brain send ONLY pump speed,
+  // Filter Pump (0x11), and Cleaner (0x15) WITHOUT the master interlock. Restores
+  // across reboots so the brain self-resumes. Every other write still needs interlock_.
+  volatile bool scheduler_armed_{false};
   volatile bool sniff_all_{false};  // promiscuous bus capture (read-only diagnostic)
   volatile uint32_t iaq_acks_{0};
 

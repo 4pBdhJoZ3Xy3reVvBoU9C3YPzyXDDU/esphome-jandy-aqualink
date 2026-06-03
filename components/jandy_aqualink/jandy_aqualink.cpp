@@ -344,9 +344,18 @@ void JandyAqualink::set_iaq_presence(bool on) {
   ESP_LOGW(TAG, "iAqualink presence %s (emulating 0x%02X, read-only)", on ? "ON" : "OFF", iaq_addr_);
 }
 
+void JandyAqualink::set_scheduler_armed(bool on) {
+  portENTER_CRITICAL(&mux_);
+  scheduler_armed_ = on;
+  portEXIT_CRITICAL(&mux_);
+  ESP_LOGW(TAG, "scheduler armed %s (permits pump speed + filter pump + cleaner unattended)",
+           on ? "ON" : "OFF");
+}
+
 void JandyAqualink::iaq_press(uint8_t key) {
-  if (!interlock_) {
-    ESP_LOGW(TAG, "iaq press REFUSED: safety interlock is OFF (key=0x%02X)", key);
+  bool scheduler_ok = scheduler_armed_ && jandy::is_scheduler_safe_key(key);
+  if (!interlock_ && !scheduler_ok) {
+    ESP_LOGW(TAG, "iaq press REFUSED: interlock OFF and key 0x%02X not scheduler-safe", key);
     return;
   }
   if (!iaq_presence_) {
@@ -411,8 +420,8 @@ void JandyAqualink::read_pump_speed() {
 }
 
 void JandyAqualink::set_pump_rpm(uint16_t rpm) {
-  if (!interlock_) {
-    ESP_LOGW(TAG, "set_pump_rpm REFUSED: safety interlock is OFF (rpm=%u)", rpm);
+  if (!interlock_ && !scheduler_armed_) {
+    ESP_LOGW(TAG, "set_pump_rpm REFUSED: interlock OFF and scheduler not armed (rpm=%u)", rpm);
     return;
   }
   if (!iaq_presence_) {
