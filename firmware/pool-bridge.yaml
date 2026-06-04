@@ -445,5 +445,8 @@ binary_sensor:
   - platform: status
     name: Pool Bridge Status
 
-web_server:
-  port: 80
+# web_server is intentionally DISABLED for security (2026-06-04 audit): it served an
+# UNAUTHENTICATED control page on port 80, so anything on the LAN could actuate equipment
+# (including arming the interlock, then heaters / valves). Home Assistant controls the box
+# over the ENCRYPTED native API (port 6053) instead, so nothing functional is lost. If you
+# ever re-enable it, add an `auth:` block (username + password via !secret).
