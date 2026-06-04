@@ -584,8 +584,8 @@ void JandyAqualink::send_settemp_set_(uint16_t temp) {
 // only when vsp_adjust_allowed(page) is true (page == DEVICES), because 0x13 is
 // Pool Heat on the HOME page.
 void JandyAqualink::advance_set_sequence_() {
-  if (!interlock_) {
-    ESP_LOGW(TAG, "set sequence aborted at step %d: interlock OFF", iaq_set_step_);
+  if (!interlock_ && !scheduler_armed_) {
+    ESP_LOGW(TAG, "set sequence aborted at step %d: interlock OFF and scheduler not armed", iaq_set_step_);
     iaq_set_step_ = 0;
     send_iaq_ack_(0x00);
     return;
