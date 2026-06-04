@@ -1,60 +1,76 @@
-# ESPHome Jandy Aqualink keypad
+# ESPHome Jandy AquaLink (ESP32-native, at the bus)
 
-An ESPHome component that emulates a Jandy Aqualink RS keypad on an ESP32 wired
-to the panel's RS485 bus. It does the timing-critical work **at the bus**, on a
-dedicated CPU core, so there is no separate computer and no WiFi in the
-real-time path. It reports into Home Assistant natively.
+An ESPHome external component that talks to a **Jandy AquaLink RS** pool panel over
+its RS485 bus from an ESP32 wired directly to the bus. It does the timing-critical
+work **at the bus**, on a dedicated CPU core, so there is no separate Linux box and
+no WiFi in the real-time path. It reports into, and is controlled from, **Home
+Assistant natively**.
 
-This was built and proven against a real Aqualink RS-8 panel (with a Pentair
-IntelliFlo3 pump on the same bus) using an M5Stack Atom Lite.
+Built and proven against a real AquaLink RS-8 panel with a Pentair IntelliFlo VS
+pump on the same bus, on an M5Stack Atom Lite (about $20 of hardware).
 
-## Status
+## What it does
 
-**v1: keypad presence + health diagnostics. Read-only. No equipment is actuated.**
+Reading (no actuation):
+- Holds an emulated AllButton keypad (`0x08`) and answers the panel's poll in-slot
+  in about **110 microseconds**, against the panel's ~20-40 ms reply window, framing
+  the whole bus with **zero checksum errors**.
+- Emulates the iAqualink controller (`0x33`) to read **pool / spa / air temperatures**
+  and decode live **equipment status** (filter pump, cleaner, spa mode, blower).
+- Reads **pump speed (RPM) and watts** from the panel's status page.
 
-Proven on real hardware:
-- The ESP32 holds a live emulated keypad. The panel polls it and we reply
-  in-slot in about **110 microseconds**, every time, against the panel's
-  ~20-40 ms reply window.
-- Reading the bus directly, it frames the entire bus with **zero checksum
-  errors** over many thousands of frames.
-- When we answer, the panel registers our keypad and starts sending it targeted
-  status, which it does not send when nothing is there. That is the proof the
-  emulation is accepted.
+Control (all gated, off by default, see Safety):
+- **Pump speed** by exact RPM or presets, salt-cell-flow aware.
+- **Filter pump, cleaner, lights, blower**, and **pool / spa mode** switching.
+- **Heaters** on/off and **temperature setpoints** (pool and spa).
 
-Not in v1 (see [Roadmap](docs/ROADMAP.md)):
-- Numeric temperatures and setpoints. On this panel those arrive over the
-  display-text channel, which the panel only pushes in response to keypad
-  button presses. Reading them needs an emulated menu-walk, which is the same
-  machinery as writing and carries equipment risk. It is a deliberate later
-  phase.
-- Any control (setpoint changes, equipment toggles).
+Home Assistant can run it as a **scheduler**: a narrow, restart-surviving permission
+lets HA set pump speed and toggle the filter pump and cleaner unattended, while
+everything riskier stays behind the master interlock.
+
+## Safety model
+
+This drives live equipment, so writes are conservative by construction:
+- A **master interlock** switch gates every write and **boots OFF** on every restart.
+  With it off, the component is inert presence only.
+- Writes also require the iAqualink presence channel to be on.
+- The autonomous **scheduler** permission is scoped **per keycode** to exactly the
+  filter pump and cleaner (plus pump speed). It can never fire a heater, valve, or
+  light, even when armed.
+- Reads are view-only and never send an equipment key.
+- Only one device may emulate a given bus address at a time. Do not run another
+  emulator (AqualinkD, aquaweb) on the same address concurrently.
+
+The control surface is the **encrypted Home Assistant native API** plus OTA. The
+ESPHome `web_server` is intentionally left disabled, because it would otherwise be an
+unauthenticated control endpoint on the local network.
 
 ## Why this is interesting
 
-Existing local Jandy control (AqualinkD, the gold standard) runs on a separate
-always-on Linux box wired to the bus, because the reply window is too tight for
-a WiFi bridge. This component meets that window on the ESP32 itself: the bus
-state machine runs in a FreeRTOS task pinned to core 1, while WiFi and the Home
-Assistant API run on core 0, so the network can never delay a reply. The result
-is keypad presence on roughly $20 of hardware with native Home Assistant
-integration and over-the-air updates.
+Established local Jandy control (AqualinkD, the gold standard) runs on a separate
+always-on Linux box wired to the bus, because the reply window is too tight for a
+WiFi bridge. This component meets that window **on the ESP32 itself**: the bus state
+machine runs in a FreeRTOS task pinned to core 1, while WiFi and the Home Assistant
+API run on core 0, so the network can never delay a reply. The result is full panel
+presence, reading, and gated control on roughly $20 of hardware, native to Home
+Assistant, over the air updatable, with no extra computer.
 
 ## Hardware
 
 - An ESP32. Tested on an **M5Stack Atom Lite**.
 - An RS485 transceiver. Tested with the **M5Stack ATOM RS485 base** (SP3485,
   automatic direction control, so no direction GPIO is needed).
-- A connection to the panel's RS485 bus (the AUX/RS485 terminals): A, B, and
-  ground. Get A/B polarity right; if it is reversed you will see no valid
-  frames. Correct polarity shows a steady stream of checksum-clean frames.
+- A connection to the panel's RS485 bus (the AUX / RS485 terminals): A, B, and
+  ground. Get A/B polarity right; reversed shows no valid frames, correct shows a
+  steady stream of checksum-clean frames.
 
-Default pins match the M5 ATOM RS485 base: **GPIO19 = TX, GPIO22 = RX**, 9600
-baud, 8N1. Override them in the config if your wiring differs.
+Default pins match the M5 ATOM RS485 base: **GPIO19 = TX, GPIO22 = RX**, 9600 baud,
+8N1. Override them in the config if your wiring differs.
 
 ## Install
 
-This is an ESPHome external component. Add it to your device YAML:
+This is an ESPHome external component. A complete, working example device config is
+in [`firmware/pool-bridge.yaml`](firmware/pool-bridge.yaml). Minimal start:
 
 ```yaml
 external_components:
@@ -62,7 +78,7 @@ external_components:
     refresh: 0s
 
 jandy_aqualink:
-  keypad_address: 0x08        # a free AllButton keypad slot, see below
+  keypad_address: 0x08
   polls_answered:
     name: Jandy Keypad Polls Answered
   reply_latency:
@@ -71,53 +87,43 @@ jandy_aqualink:
     name: Jandy Bus Checksum Errors
 ```
 
-A complete example device config is in [`firmware/pool-bridge.yaml`](firmware/pool-bridge.yaml).
-Flash it with the ESPHome dashboard or `esphome run`. After it boots, the
-`Polls Answered` sensor should climb steadily and `Checksum Errors` should stay
-at zero.
+After it boots, `Polls Answered` should climb steadily and `Checksum Errors` should
+stay at zero.
 
 ## Picking a keypad address
 
-The panel supports up to four AllButton keypads at addresses `0x08` to `0x0B`.
-You must emulate one that no real keypad uses, or two devices will answer the
-same poll and corrupt the bus. If you have a spare slot (most installs do),
-`0x08` is a good first try. After flashing, watch `Checksum Errors`: if it stays
-at zero you are not colliding with anything. If it climbs, switch to another
-address.
+The panel supports up to four AllButton keypads at `0x08` to `0x0B`. Emulate one no
+real keypad uses, or two devices will answer the same poll and corrupt the bus.
+`0x08` is a good first try. Watch `Checksum Errors`: zero means no collision; if it
+climbs, switch addresses. Temperatures and the richer control use the iAqualink
+controller slot (`0x33`), which on the test panel was free because its wireless
+controller had long since died.
 
-## How it works
+## Notes and limitations
 
-The panel is the bus master and polls each device address in turn. When it polls
-our address with a probe (command `0x00`), we immediately reply with a fixed
-AllButton acknowledgement (`10 02 00 01 80 00 93 10 03`). The acknowledgement
-carries a "pending key" byte that we hard-code to `0x00`, meaning no key. That
-announces a keypad is present but issues no command, so it cannot change a
-setpoint or toggle equipment. There is no code path in this version that ever
-sends a non-zero key.
-
-## Safety
-
-- This talks to equipment-controlling hardware. v1 is read-only by construction
-  (the pending-key byte is always `0x00`).
-- Only one device may emulate a given keypad address at a time. If you also run
-  AqualinkD or another emulator, stop it first.
-- Get A/B polarity right and confirm checksum-clean frames before relying on it.
+- Setpoint writes are confirmed by equipment behavior, not by a readback. The panel
+  does not echo the target back to this controller, so a write is verified by the
+  heater firing or settling, not by reading the number back.
+- Salt cell percentage and salt level are not exposed on any page this panel makes
+  reachable, so the component governs pump flow (which gates whether the cell can
+  generate) but not the cell directly.
+- The heater-enabled status decode is unreliable on the test panel; trust the panel's
+  own heat indicator over that sensor.
 
 ## Repository layout
 
-- `components/jandy_aqualink/` the ESPHome component. `jandy_proto.*` is the
-  pure protocol logic (framing, de-stuffing, checksum, the decoders) with no
-  Arduino or ESPHome dependency; `jandy_aqualink.*` is the hardware and ESPHome
-  glue; `__init__.py` is the config codegen.
+- `components/jandy_aqualink/` the ESPHome component. `jandy_proto.*` is the pure
+  protocol logic (framing, de-stuffing, checksum, decoders, frame builders) with no
+  Arduino or ESPHome dependency; `jandy_aqualink.*` is the hardware and ESPHome glue
+  with the gated control state machines; `__init__.py` is the config codegen.
 - `firmware/pool-bridge.yaml` a complete example device config.
-- `jandy/`, `tests/`, `capture.py` a Python reference implementation of the same
-  protocol logic, its unit tests, and a read-only TCP capture tool used to
-  develop and validate the decoder.
-- `docs/ROADMAP.md` the plan for temperatures and control.
+- `jandy/`, `tests/` a Python reference implementation of the protocol logic and its
+  unit tests. The C++ mirrors these and self-tests the same vectors on boot.
+- `docs/` the roadmap and the design and build history.
 
 ## Credits
 
 Protocol understanding stands on the shoulders of
 [AqualinkD](https://github.com/sfeakes/AqualinkD) and
-[aquaweb](https://github.com/earlephilhower/aquaweb). This project is an
-independent ESP32-native reimplementation, not affiliated with Jandy or Zodiac.
+[aquaweb](https://github.com/earlephilhower/aquaweb). This is an independent
+ESP32-native reimplementation, not affiliated with Jandy or Zodiac.
