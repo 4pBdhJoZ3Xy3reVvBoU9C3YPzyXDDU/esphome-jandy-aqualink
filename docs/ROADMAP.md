@@ -129,3 +129,60 @@ independent and can swap.
 
 Phase 4 (decode the CMD_STATUS LED bitmap into named circuit states) remains the
 optional polish after control is complete.
+
+## The HA pool brain (shipped 2026-06-04)
+
+Home Assistant is now the pool's autonomous scheduler, driving the box's shipped
+controls, with the panel's own stored schedule kept underneath as the hardware
+failsafe.
+
+The box gained a narrow "Pool Scheduler" permission (firmware `scheduler_armed`
+switch, `RESTORE_DEFAULT_OFF` so it self-resumes after a power blip). When on, it
+lets HA set pump speed and toggle the filter pump (`0x11`) and cleaner (`0x15`)
+WITHOUT the master interlock, scoped per-key by `is_scheduler_safe_key`. Every other
+write (heaters, spa, valves, blower, lights, DEVICES toggles) still requires the
+master interlock, which still boots OFF. Proven live: under the scheduler the pump
+set completes and the pump physically moves; the blower and heaters still refuse.
+
+### Daily schedule (HA local time)
+
+- 22:00 to 08:00 Quiet: pump Night 1100, cleaner off.
+- 08:00 to 10:00 Morning clean: pump Normal 2750, cleaner on.
+- 10:00 to 20:00 Day: pump Low 2000 (above the ~1850 salt floor), cleaner off.
+- 20:00 to 22:00 Evening clean: pump Normal 2750, cleaner on.
+
+### How it works
+
+- A 2-minute "watch and correct" automation reads the pump and sets it back if the
+  panel moved it off target, and enforces the cleaner state. It pauses during spa,
+  a manual hold, bridge-offline, or scheduler-off.
+- The pump is never commanded off (lowest is 1100), so the panel's own schedule keeps
+  the water moving if HA or the box dies. Stagnation needs HA, the box, and the panel
+  schedule to all fail at once.
+- Spa: switching to spa stands the brain down (it touches nothing); switching back
+  restores the filter pump (with a retry after the valves settle) and resumes.
+
+### Controls (HA entities)
+
+- `switch.pool_rs485_bridge_pool_scheduler`: the brain on/off. Turn OFF to pause the
+  whole brain, and FIRST before bringing the iAqualink 2.0 online (the presence keeper
+  is gated on this, so disarming fully stands the box down off the 0x33 seat).
+- `switch.pool_rs485_bridge_pool_keypad_keypress_armed`: the master interlock for
+  manual/risky writes. Unchanged; boots OFF.
+- `input_button.pool_swim_boost`: bump to 2750 for ~2h or until the next phase.
+- `input_number.pool_manual_speed_request`: hold a chosen speed for ~2h / next phase.
+- `input_select.pool_phase`: shows the current phase (or "Spa (manual)").
+
+### HA objects (created via the config API, not in this repo)
+
+Helpers: `input_number.pool_target_rpm`, `input_boolean.pool_cleaner_should_run`,
+`timer.pool_manual_hold`, `input_select.pool_phase`, `input_button.pool_swim_boost`,
+`input_number.pool_manual_speed_request`.
+Scripts: `pool_apply_pump`, `pool_apply_cleaner`, `pool_set_phase`,
+`pool_evaluate_phase`.
+Automations: `pool_phase_scheduler`, `pool_watch_and_correct`, `pool_startup_resync`,
+`pool_spa_standdown`, `pool_restore_after_spa`, `pool_swim_boost`, `pool_manual_speed`,
+`pool_presence_keeper`.
+
+Spec `docs/superpowers/specs/2026-06-03-pool-ha-brain-design.md`, plan
+`docs/superpowers/plans/2026-06-03-pool-ha-brain.md`.
