@@ -262,6 +262,10 @@ void JandyAqualink::task_loop() {
                    sent_key, ack[0], ack[1], ack[2], ack[3], ack[4], ack[5], ack[6], ack[7], ack[8]);
         }
         log_iaq_frame(f);  // after the reply, never delays it
+        // The HOME page has stopped sending its water label (since 2026-09), so
+        // give the reader the reliable 0x08 spa bit to place an unlabeled value.
+        int8_t spa_hint = cs_spa_;  // single volatile byte read
+        if (spa_hint >= 0) iaq_reader_.set_spa_mode_hint(spa_hint == 1);
         iaq_reader_.feed(f);
         const auto &ts = iaq_reader_.state;
         portENTER_CRITICAL(&mux_);

@@ -255,6 +255,9 @@ class IaqReader {
   bool pool_heat_enabled() const { return pool_heat_enabled_; }
   bool has_spa_heat() const { return has_spa_heat_; }
   bool spa_heat_enabled() const { return spa_heat_enabled_; }
+  // Panel spa-mode status bit from the keypad status frame. Used only when the
+  // HOME page sends the water value without its index-4 label (since 2026-09).
+  void set_spa_mode_hint(bool spa) { spa_mode_hint_ = spa ? 1 : 0; }
 
  private:
   void commit_home();
@@ -264,6 +267,7 @@ class IaqReader {
   uint8_t page_type_ = 0;
   uint8_t current_page_ = 0;
   int water_mode_ = 0;
+  int spa_mode_hint_ = -1;  // -1 unknown, 0 pool, 1 spa
   // HOME-page heater button indices (this panel's home layout) and decoded state.
   static constexpr int BTN_POOL_HEAT = 2, BTN_SPA_HEAT = 3;
   bool pool_heat_enabled_ = false, spa_heat_enabled_ = false;

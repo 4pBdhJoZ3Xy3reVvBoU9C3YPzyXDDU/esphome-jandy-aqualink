@@ -100,6 +100,9 @@ class IaqReader:
         self.has_pool = False
         self.has_spa = False
         self.water_mode = 0  # current home-page water label: 0 none, 2 pool, 3 spa
+        # Panel spa-mode status bit, set by the caller (None = not yet known).
+        # Used only when the HOME page sends the water value without its label.
+        self.spa_mode_hint = None
         self.pool_heat_enabled = False
         self.spa_heat_enabled = False
         self.has_pool_heat = False
@@ -162,6 +165,19 @@ class IaqReader:
                 self.spa = val
                 self.has_spa = True
                 self.water_mode = 3
+        # Since 2026-09 this panel sends the water value (index 0) but not its
+        # label (index 4). With no label, assign it by the spa-mode status bit.
+        if _VALUE_OFFSET not in self._lines and self.spa_mode_hint is not None:
+            val = _leading_int(self._lines.get(0, ""))
+            if val is not None:
+                if self.spa_mode_hint:
+                    self.spa = val
+                    self.has_spa = True
+                    self.water_mode = 3
+                else:
+                    self.pool = val
+                    self.has_pool = True
+                    self.water_mode = 2
         # HOME heater buttons: state 3 = on.
         if _BTN_POOL_HEAT in self._btn_state:
             self.pool_heat_enabled = self._btn_state[_BTN_POOL_HEAT] == 3

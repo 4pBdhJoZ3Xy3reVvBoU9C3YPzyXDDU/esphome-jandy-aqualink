@@ -99,6 +99,54 @@ class TestIaqHomePage(unittest.TestCase):
     def test_water_mode_starts_unknown(self):
         self.assertEqual(IaqReader().water_mode, 0)
 
+    # Since mid-September 2026 this panel's HOME page stopped sending the index-4
+    # water label. Captured 2026-10-04 in spa mode at a 98 F setpoint, three
+    # pushes in a row: M2 "", M3 "", M1 "short", M5 "Air Temp", M0 "99", no M4.
+    # The value line still arrives, so the water temp is assigned by the panel's
+    # spa-mode status bit, which the bridge decodes separately and reliably.
+    def test_unlabeled_water_value_goes_to_spa_when_spa_mode_hint_is_on(self):
+        r = IaqReader()
+        r.spa_mode_hint = True
+        feed_frames(r, IAQ_PAGE_START_HOME, IAQ_MSG_I1_156, IAQ_MSG_I5_AIR, IAQ_MSG_I0_88, IAQ_PAGE_END)
+        self.assertTrue(r.has_spa)
+        self.assertEqual(r.spa, 88)
+        self.assertFalse(r.has_pool)
+        self.assertEqual(r.water_mode, 3)
+
+    def test_unlabeled_water_value_goes_to_pool_when_spa_mode_hint_is_off(self):
+        r = IaqReader()
+        r.spa_mode_hint = False
+        feed_frames(r, IAQ_PAGE_START_HOME, IAQ_MSG_I1_156, IAQ_MSG_I5_AIR, IAQ_MSG_I0_90, IAQ_PAGE_END)
+        self.assertTrue(r.has_pool)
+        self.assertEqual(r.pool, 90)
+        self.assertFalse(r.has_spa)
+        self.assertEqual(r.water_mode, 2)
+
+    def test_unlabeled_water_value_is_dropped_when_mode_is_unknown(self):
+        # Never guess: a value with no label and no mode hint publishes nothing.
+        r = IaqReader()
+        feed_frames(r, IAQ_PAGE_START_HOME, IAQ_MSG_I1_156, IAQ_MSG_I5_AIR, IAQ_MSG_I0_88, IAQ_PAGE_END)
+        self.assertFalse(r.has_spa)
+        self.assertFalse(r.has_pool)
+        self.assertEqual(r.water_mode, 0)
+
+    def test_label_wins_over_spa_mode_hint(self):
+        # When the label does arrive it is the authority, even against the hint.
+        r = IaqReader()
+        r.spa_mode_hint = False
+        feed_frames(r, IAQ_PAGE_START_HOME, IAQ_MSG_I4_SPA, IAQ_MSG_I0_88, IAQ_PAGE_END)
+        self.assertTrue(r.has_spa)
+        self.assertFalse(r.has_pool)
+
+    def test_shorted_air_sensor_text_is_not_a_temperature(self):
+        # The panel reports a faulty air sensor as "short" in the value slot.
+        r = IaqReader()
+        feed_frames(
+            r, IAQ_PAGE_START_HOME, fx.h("10 02 33 25 01 73 68 6F 72 74 00 9B 10 03"), IAQ_MSG_I5_AIR,
+            IAQ_PAGE_END,
+        )
+        self.assertFalse(r.has_air)
+
     def test_non_home_page_does_not_set_temps(self):
         r = IaqReader()
         # Page type 0x36 = DEVICES, not HOME.
