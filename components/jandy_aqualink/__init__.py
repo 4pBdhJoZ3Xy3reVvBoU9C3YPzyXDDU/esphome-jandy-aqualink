@@ -31,6 +31,13 @@ CONF_FILTER_PUMP_STATE = "filter_pump_state"
 CONF_CLEANER_STATE = "cleaner_state"
 CONF_POOL_HEAT_ENABLED = "pool_heat_enabled"
 CONF_SPA_HEAT_ENABLED = "spa_heat_enabled"
+CONF_HA_WATCHDOG = "ha_watchdog"
+CONF_REBOOT_AFTER = "reboot_after"
+CONF_FAILSAFE_AFTER = "failsafe_after"
+CONF_MAX_BACKOFF = "max_backoff"
+CONF_FAILSAFE_RPM = "failsafe_rpm"
+CONF_HEARTBEAT_AGE = "heartbeat_age"
+CONF_FAILSAFE_ACTIVE = "failsafe_active"
 
 
 def _temp_sensor():
@@ -103,6 +110,31 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_SPA_HEAT_ENABLED): binary_sensor.binary_sensor_schema(
             icon="mdi:fire",
         ),
+        cv.Optional(CONF_HA_WATCHDOG): cv.Schema(
+            {
+                cv.Optional(CONF_REBOOT_AFTER, default="20min"): cv.All(
+                    cv.positive_time_period_milliseconds,
+                    cv.Range(min=cv.TimePeriod(minutes=5)),
+                ),
+                cv.Optional(CONF_FAILSAFE_AFTER, default="60min"): cv.All(
+                    cv.positive_time_period_milliseconds,
+                    cv.Range(min=cv.TimePeriod(minutes=10)),
+                ),
+                cv.Optional(CONF_MAX_BACKOFF, default="6h"): cv.positive_time_period_milliseconds,
+                cv.Optional(CONF_FAILSAFE_RPM, default=2000): cv.int_range(min=1100, max=3450),
+                cv.Optional(CONF_HEARTBEAT_AGE): sensor.sensor_schema(
+                    unit_of_measurement="min",
+                    icon="mdi:heart-pulse",
+                    accuracy_decimals=0,
+                    state_class=STATE_CLASS_MEASUREMENT,
+                    entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                ),
+                cv.Optional(CONF_FAILSAFE_ACTIVE): binary_sensor.binary_sensor_schema(
+                    icon="mdi:shield-alert",
+                    entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+                ),
+            }
+        ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -158,3 +190,19 @@ async def to_code(config):
     if CONF_SPA_HEAT_ENABLED in config:
         b = await binary_sensor.new_binary_sensor(config[CONF_SPA_HEAT_ENABLED])
         cg.add(var.set_spa_heat_bs(b))
+    if CONF_HA_WATCHDOG in config:
+        wd = config[CONF_HA_WATCHDOG]
+        cg.add(
+            var.configure_watchdog(
+                wd[CONF_REBOOT_AFTER].total_milliseconds,
+                wd[CONF_FAILSAFE_AFTER].total_milliseconds,
+                wd[CONF_MAX_BACKOFF].total_milliseconds,
+                wd[CONF_FAILSAFE_RPM],
+            )
+        )
+        if CONF_HEARTBEAT_AGE in wd:
+            s = await sensor.new_sensor(wd[CONF_HEARTBEAT_AGE])
+            cg.add(var.set_heartbeat_age_sensor(s))
+        if CONF_FAILSAFE_ACTIVE in wd:
+            b = await binary_sensor.new_binary_sensor(wd[CONF_FAILSAFE_ACTIVE])
+            cg.add(var.set_failsafe_bs(b))

@@ -126,7 +126,23 @@ class JandyAqualink : public Component {
   // 0x24 value -> HOME). The 0x24 frame is sent ONLY on SET_TEMP. One at a time.
   void set_heater_setpoint(bool is_spa, uint16_t temp);
 
+  // HA watchdog + HA-silent failsafe (optional `ha_watchdog:` block). Home Assistant
+  // calls ha_heartbeat() about once a minute. With no heartbeat for reboot_after the
+  // bridge reboots itself (threshold doubles per watchdog reboot, capped at
+  // max_backoff); with none for failsafe_after it holds the filter pump on at
+  // failsafe_rpm through the scheduler-safe keys, never in spa mode. Both stay off
+  // until the first heartbeat after a cold boot. Silence and the reboot count
+  // survive the watchdog's own reboots in RTC memory.
+  void configure_watchdog(uint32_t reboot_after_ms, uint32_t failsafe_after_ms,
+                          uint32_t max_backoff_ms, uint16_t failsafe_rpm);
+  void set_heartbeat_age_sensor(sensor::Sensor *s) { heartbeat_age_sensor_ = s; }
+  void set_failsafe_bs(binary_sensor::BinarySensor *b) { failsafe_bs_ = b; }
+  void ha_heartbeat();
+  void set_watchdog_enabled(bool on);
+
  protected:
+  void check_watchdog_();            // core-0, from loop()
+  void save_watchdog_rtc_(uint32_t pending_silence);
   static void task_trampoline(void *arg);
   void task_loop();
   void observe_frame(const jandy::Frame &f);
@@ -269,6 +285,25 @@ class JandyAqualink : public Component {
   // because setup() runs before the log stream attaches.
   bool selftest_ok_{false};
   std::string selftest_detail_;
+
+  // HA watchdog state (core 0 only).
+  bool wd_configured_{false};
+  bool wd_enabled_{true};
+  bool wd_armed_{false};
+  bool wd_failsafe_{false};
+  int8_t pub_failsafe_{-1};
+  uint32_t wd_reboot_after_{20 * 60000}, wd_failsafe_after_{60 * 60000}, wd_max_backoff_{360 * 60000};
+  uint16_t wd_failsafe_rpm_{2000};
+  uint32_t wd_reboot_count_{0};
+  uint32_t wd_silence_offset_{0};   // silence carried in from before a watchdog reboot
+  uint32_t wd_last_hb_ms_{0};       // millis() of the last heartbeat (or boot)
+  uint32_t wd_last_check_ms_{0}, wd_last_age_pub_ms_{0};
+  uint32_t wd_pump_off_since_ms_{0};
+  bool wd_pump_off_tracking_{false};
+  uint32_t wd_last_press_ms_{0}, wd_last_rpm_ms_{0};
+  bool wd_pressed_ever_{false}, wd_rpm_ever_{false};
+  sensor::Sensor *heartbeat_age_sensor_{nullptr};
+  binary_sensor::BinarySensor *failsafe_bs_{nullptr};
 
   // loop()-owned, for publish-on-change.
   uint32_t pub_polls_{0xFFFFFFFF};

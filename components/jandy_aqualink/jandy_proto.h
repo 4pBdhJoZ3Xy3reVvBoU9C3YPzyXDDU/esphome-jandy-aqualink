@@ -280,6 +280,28 @@ class IaqReader {
 
 // Runs the known frame vectors through the logic and reports e.g. "6/6".
 // Returns true only if every check passes.
+// HA watchdog and HA-silent failsafe (mirror of jandy/watchdog.py). Times in ms.
+static constexpr uint32_t WD_MIN = 60000;
+static constexpr uint32_t WD_MIN_UPTIME = 5 * WD_MIN;
+static constexpr uint32_t WD_PUMP_OFF_CONFIRM = 2 * WD_MIN;
+static constexpr uint32_t WD_PRESS_MIN_GAP = 30 * WD_MIN;
+static constexpr uint32_t WD_RPM_REASSERT = 10 * WD_MIN;
+
+uint32_t reboot_threshold(uint32_t reboot_count, uint32_t reboot_after, uint32_t max_backoff);
+
+struct WatchdogDecision {
+  bool reboot;
+  bool failsafe;
+};
+WatchdogDecision watchdog_decide(uint32_t silence, bool armed, bool enabled, uint32_t uptime,
+                                 uint32_t reboot_count, uint32_t reboot_after,
+                                 uint32_t failsafe_after, uint32_t max_backoff);
+
+enum FailsafeAction : uint8_t { FS_NONE = 0, FS_PRESS_FILTER_PUMP = 1, FS_SET_RPM = 2 };
+// spa_mode / pump_on: -1 unknown, 0 off, 1 on.
+FailsafeAction failsafe_action(int spa_mode, int pump_on, uint32_t pump_off_for,
+                               uint32_t since_press, uint32_t since_rpm, bool busy);
+
 bool selftest(std::string &detail);
 
 }  // namespace jandy

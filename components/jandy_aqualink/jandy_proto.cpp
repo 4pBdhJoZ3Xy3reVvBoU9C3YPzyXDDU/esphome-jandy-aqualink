@@ -639,8 +639,64 @@ bool selftest(std::string &detail) {
     else detail += " STATUS08";
   }
 
+  // HA watchdog + failsafe decisions (same oracle as tests/test_watchdog.py).
+  {
+    total++;
+    const uint32_t M = WD_MIN, RA = 20 * M, FA = 60 * M, MB = 360 * M;
+    auto d = [&](uint32_t s, bool armed, bool en, uint32_t up, uint32_t n) {
+      return watchdog_decide(s, armed, en, up, n, RA, FA, MB);
+    };
+    WatchdogDecision a = d(19 * M, true, true, 30 * M, 0), b = d(20 * M, true, true, 30 * M, 0),
+                     c = d(500 * M, false, true, 30 * M, 0), e = d(45 * M, true, true, 4 * M, 1),
+                     f = d(40 * M, true, true, 30 * M, 1), g = d(60 * M, true, true, 30 * M, 2);
+    bool pass = !a.reboot && !a.failsafe && b.reboot && !b.failsafe && !c.reboot && !c.failsafe &&
+                !e.reboot && f.reboot && g.failsafe &&
+                reboot_threshold(2, RA, MB) == 80 * M && reboot_threshold(40, RA, MB) == MB &&
+                failsafe_action(0, 0, 5 * M, 60 * M, 60 * M, false) == FS_PRESS_FILTER_PUMP &&
+                failsafe_action(0, 0, 90000, 60 * M, 60 * M, false) == FS_NONE &&
+                failsafe_action(0, 0, 5 * M, 29 * M, 60 * M, false) == FS_NONE &&
+                failsafe_action(0, 1, 0, 60 * M, 10 * M, false) == FS_SET_RPM &&
+                failsafe_action(-1, 0, 5 * M, 60 * M, 60 * M, false) == FS_NONE &&
+                failsafe_action(1, 1, 0, 60 * M, 60 * M, false) == FS_NONE &&
+                failsafe_action(0, -1, 5 * M, 60 * M, 60 * M, false) == FS_NONE &&
+                failsafe_action(0, 1, 0, 60 * M, 60 * M, true) == FS_NONE;
+    if (pass) ok++;
+    else detail += " WATCHDOG";
+  }
+
   detail = std::to_string(ok) + "/" + std::to_string(total);
   return ok == total;
+}
+
+uint32_t reboot_threshold(uint32_t reboot_count, uint32_t reboot_after, uint32_t max_backoff) {
+  uint64_t t = reboot_after;
+  for (uint32_t i = 0; i < reboot_count; i++) {
+    t *= 2;
+    if (t >= max_backoff) return max_backoff;
+  }
+  return t < max_backoff ? (uint32_t) t : max_backoff;
+}
+
+WatchdogDecision watchdog_decide(uint32_t silence, bool armed, bool enabled, uint32_t uptime,
+                                 uint32_t reboot_count, uint32_t reboot_after,
+                                 uint32_t failsafe_after, uint32_t max_backoff) {
+  if (!(armed && enabled)) return {false, false};
+  bool failsafe = silence >= failsafe_after;
+  bool reboot = uptime >= WD_MIN_UPTIME &&
+                silence >= reboot_threshold(reboot_count, reboot_after, max_backoff);
+  return {reboot, failsafe};
+}
+
+FailsafeAction failsafe_action(int spa_mode, int pump_on, uint32_t pump_off_for,
+                               uint32_t since_press, uint32_t since_rpm, bool busy) {
+  if (busy || spa_mode != 0) return FS_NONE;
+  if (pump_on == 0) {
+    if (pump_off_for >= WD_PUMP_OFF_CONFIRM && since_press >= WD_PRESS_MIN_GAP)
+      return FS_PRESS_FILTER_PUMP;
+    return FS_NONE;
+  }
+  if (pump_on == 1 && since_rpm >= WD_RPM_REASSERT) return FS_SET_RPM;
+  return FS_NONE;
 }
 
 }  // namespace jandy

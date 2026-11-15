@@ -1,6 +1,9 @@
 #include "jandy_aqualink.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"  // millis()
+#include "esphome/core/application.h"  // App.safe_reboot()
+
+#include "esp_attr.h"  // RTC_NOINIT_ATTR
 
 #include "driver/uart.h"
 #include "esp_timer.h"
@@ -13,9 +16,41 @@ namespace jandy_aqualink {
 static const char *const TAG = "jandy";
 static constexpr uart_port_t JANDY_UART = UART_NUM_1;
 
+// HA watchdog state that must survive the watchdog's own software reboot. RTC slow
+// memory keeps it across esp_restart() but not across a power cycle, where the
+// magic/check fail and everything starts fresh (disarmed).
+struct WdRtc {
+  uint32_t magic;
+  uint32_t armed;
+  uint32_t reboot_count;
+  uint32_t pending;          // 1 = this boot follows a watchdog reboot
+  uint32_t pending_silence;  // silence (ms) at that reboot
+  uint32_t check;
+};
+static constexpr uint32_t WD_RTC_MAGIC = 0x4A57444Fu;  // "JWDO"
+static RTC_NOINIT_ATTR WdRtc wd_rtc;
+static uint32_t wd_rtc_check(const WdRtc &r) {
+  return r.magic ^ (r.armed * 0x9E3779B1u) ^ (r.reboot_count * 0x85EBCA77u) ^ r.pending ^
+         (r.pending_silence * 0xC2B2AE3Du);
+}
+
 void JandyAqualink::setup() {
   selftest_ok_ = jandy::selftest(selftest_detail_);
   ESP_LOGI(TAG, "selftest %s -> %s", selftest_ok_ ? "PASS" : "FAIL", selftest_detail_.c_str());
+
+  if (wd_rtc.magic == WD_RTC_MAGIC && wd_rtc.check == wd_rtc_check(wd_rtc)) {
+    wd_armed_ = wd_rtc.armed != 0;
+    if (wd_rtc.pending) {
+      wd_reboot_count_ = wd_rtc.reboot_count;
+      wd_silence_offset_ = wd_rtc.pending_silence;
+      ESP_LOGW(TAG, "HA watchdog: booted after watchdog reboot %u, silence so far %u min",
+               (unsigned) wd_reboot_count_, (unsigned) (wd_silence_offset_ / 60000));
+    }
+  } else {
+    wd_armed_ = false;
+  }
+  save_watchdog_rtc_(0);
+  wd_last_hb_ms_ = millis();
 
   uart_config_t cfg = {};
   cfg.baud_rate = baud_;
@@ -1097,7 +1132,127 @@ void JandyAqualink::dump_observations() {
            s.has_pool, s.spa, s.has_spa);
 }
 
+void JandyAqualink::configure_watchdog(uint32_t reboot_after_ms, uint32_t failsafe_after_ms,
+                                       uint32_t max_backoff_ms, uint16_t failsafe_rpm) {
+  wd_configured_ = true;
+  wd_reboot_after_ = reboot_after_ms;
+  wd_failsafe_after_ = failsafe_after_ms;
+  wd_max_backoff_ = max_backoff_ms;
+  wd_failsafe_rpm_ = failsafe_rpm;
+}
+
+void JandyAqualink::save_watchdog_rtc_(uint32_t pending_silence) {
+  wd_rtc.magic = WD_RTC_MAGIC;
+  wd_rtc.armed = wd_armed_ ? 1 : 0;
+  wd_rtc.reboot_count = wd_reboot_count_;
+  wd_rtc.pending = pending_silence ? 1 : 0;
+  wd_rtc.pending_silence = pending_silence;
+  wd_rtc.check = wd_rtc_check(wd_rtc);
+}
+
+void JandyAqualink::ha_heartbeat() {
+  bool was_armed = wd_armed_, was_quiet = wd_reboot_count_ != 0 || wd_failsafe_;
+  wd_last_hb_ms_ = millis();
+  wd_silence_offset_ = 0;
+  wd_reboot_count_ = 0;
+  wd_armed_ = true;
+  save_watchdog_rtc_(0);
+  if (!was_armed) ESP_LOGW(TAG, "HA watchdog ARMED by the first heartbeat");
+  if (was_quiet) ESP_LOGW(TAG, "HA watchdog: heartbeat is back, failsafe and backoff cleared");
+  if (wd_failsafe_) {
+    wd_failsafe_ = false;
+    ESP_LOGW(TAG, "HA failsafe OFF: Home Assistant is back in charge");
+  }
+}
+
+void JandyAqualink::set_watchdog_enabled(bool on) {
+  wd_enabled_ = on;
+  ESP_LOGW(TAG, "HA watchdog %s", on ? "ENABLED" : "DISABLED");
+  if (!on && wd_failsafe_) {
+    wd_failsafe_ = false;
+    ESP_LOGW(TAG, "HA failsafe OFF: watchdog disabled");
+  }
+}
+
+void JandyAqualink::check_watchdog_() {
+  uint32_t now = millis();
+  if (now - wd_last_check_ms_ < 5000) return;
+  wd_last_check_ms_ = now;
+
+  uint32_t silence = wd_silence_offset_ + (now - wd_last_hb_ms_);
+
+  if (heartbeat_age_sensor_ && wd_armed_ && (now - wd_last_age_pub_ms_ >= 60000 || wd_last_age_pub_ms_ == 0)) {
+    wd_last_age_pub_ms_ = now;
+    heartbeat_age_sensor_->publish_state((float) (silence / 60000));
+  }
+
+  jandy::WatchdogDecision d =
+      jandy::watchdog_decide(silence, wd_armed_, wd_enabled_, now, wd_reboot_count_, wd_reboot_after_,
+                             wd_failsafe_after_, wd_max_backoff_);
+
+  if (d.failsafe != wd_failsafe_) {
+    wd_failsafe_ = d.failsafe;
+    ESP_LOGW(TAG, "HA failsafe %s (no heartbeat for %u min)", wd_failsafe_ ? "ON" : "OFF",
+             (unsigned) (silence / 60000));
+  }
+  if (failsafe_bs_ && pub_failsafe_ != (wd_failsafe_ ? 1 : 0)) {
+    failsafe_bs_->publish_state(wd_failsafe_);
+    pub_failsafe_ = wd_failsafe_ ? 1 : 0;
+  }
+
+  if (d.reboot) {
+    wd_reboot_count_++;
+    ESP_LOGE(TAG, "HA watchdog: no heartbeat for %u min, rebooting (watchdog reboot %u)",
+             (unsigned) (silence / 60000), (unsigned) wd_reboot_count_);
+    save_watchdog_rtc_(silence ? silence : 1);
+    App.safe_reboot();
+    return;
+  }
+
+  // Failsafe actions. Track how long the filter pump has read off.
+  int8_t spa_s, pump_s;
+  bool busy;
+  portENTER_CRITICAL(&mux_);
+  spa_s = cs_spa_;
+  pump_s = cs_pump_;
+  busy = iaq_set_step_ != 0 || iaq_toggle_step_ != 0 || iaq_heater_step_ != 0 || iaq_settemp_step_ != 0 ||
+         iaq_survey_key_ >= 0 || iaq_armed_key_ >= 0;
+  portEXIT_CRITICAL(&mux_);
+  if (pump_s == 0) {
+    if (!wd_pump_off_tracking_) {
+      wd_pump_off_tracking_ = true;
+      wd_pump_off_since_ms_ = now;
+    }
+  } else {
+    wd_pump_off_tracking_ = false;
+  }
+  if (!wd_failsafe_) return;
+
+  const uint32_t never = 0xFFFFFFFFu;
+  uint32_t off_for = wd_pump_off_tracking_ ? now - wd_pump_off_since_ms_ : 0;
+  uint32_t since_press = wd_pressed_ever_ ? now - wd_last_press_ms_ : never;
+  uint32_t since_rpm = wd_rpm_ever_ ? now - wd_last_rpm_ms_ : never;
+  switch (jandy::failsafe_action(spa_s, pump_s, off_for, since_press, since_rpm, busy)) {
+    case jandy::FS_PRESS_FILTER_PUMP:
+      ESP_LOGW(TAG, "HA failsafe: filter pump off for %u s, pressing Filter Pump once",
+               (unsigned) (off_for / 1000));
+      wd_pressed_ever_ = true;
+      wd_last_press_ms_ = now;
+      iaq_press(jandy::KEY_IAQ_FILTER_PUMP);
+      break;
+    case jandy::FS_SET_RPM:
+      ESP_LOGW(TAG, "HA failsafe: holding the filter pump at %u RPM", (unsigned) wd_failsafe_rpm_);
+      wd_rpm_ever_ = true;
+      wd_last_rpm_ms_ = now;
+      set_pump_rpm(wd_failsafe_rpm_);
+      break;
+    default:
+      break;
+  }
+}
+
 void JandyAqualink::loop() {
+  if (wd_configured_) check_watchdog_();
   uint32_t polls, errors, latency, frames, iaq;
   int air, pool, spa, rpm, watts;
   portENTER_CRITICAL(&mux_);

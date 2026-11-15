@@ -140,8 +140,12 @@ controller had long since died.
   nothing remote could reach it. It happened at 35 days of uptime, but uptime was not
   the cause: right after the power cycle, a 13-minute-old device refused a second client
   the same way. The example config now includes a diagnostic Restart button for planned
-  reboots, but it cannot help here, because it lives on the same API. A device-side
-  self-heal is not built yet.
+  reboots, but it cannot help here, because it lives on the same API. The optional
+  `ha_watchdog:` block is the device-side answer: Home Assistant sends a heartbeat
+  every minute, the bridge reboots itself after 20 minutes without one, and after 60
+  minutes it holds the filter pump on at a safe speed until Home Assistant is back.
+  See [docs/ha-watchdog.md](docs/ha-watchdog.md). It is new and not yet proven on the
+  test install.
 
 ## Repository layout
 
