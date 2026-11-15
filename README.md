@@ -9,6 +9,14 @@ Assistant natively**.
 Built and proven against a real AquaLink RS-8 panel with a Pentair IntelliFlo VS
 pump on the same bus, on an M5Stack Atom Lite (about $20 of hardware).
 
+## Field record
+
+The test bridge has run the real pool since late May 2026, with Home Assistant as the
+daily pump scheduler since June 4. As of November 14 it was 29 days into its current
+uptime, had answered about 233,000 keypad polls since that boot, and showed zero
+checksum errors. Current firmware is built on ESPHome 2026.9.1. Two problems turned up
+in that time, and both are written up under Known issues below.
+
 ## What it does
 
 Reading (no actuation):
@@ -109,6 +117,32 @@ controller had long since died.
   generate) but not the cell directly.
 - The heater-enabled status decode is unreliable on the test panel; trust the panel's
   own heat indicator over that sensor.
+- Since September 2026 the test panel's iAqualink HOME page sometimes sends the water
+  temperature without its label. When the label is missing, the component assigns the
+  value to pool or spa using the spa-mode bit from the keypad status frame, and
+  publishes nothing if that bit is not known yet. A label that does arrive still wins.
+- If the panel's air sensor is shorted, the HOME page says `short` where the air
+  temperature belongs, and the air sensor stays unknown. That is a hardware fault at
+  the panel, not a decode problem. On a panel that relies on its own freeze
+  protection, a shorted air sensor means that protection cannot see the cold.
+
+## Known issues
+
+- **One API client at a time.** The bridge serves only one native API client at once,
+  even though ESPHome's `max_connections` defaults to 5. While Home Assistant is
+  connected, `esphome logs` connects but streams nothing. Do not disable the device's
+  Home Assistant integration entry to free the slot: on the test install that left the
+  device unable to accept any client again, and recovery took a power cycle at the
+  pad. `tools/capture_logs.py` captures logs at a chosen level, but only while Home
+  Assistant is fully stopped. Root cause not found yet.
+- **Wedge after about 35 days.** Once, the bridge stopped accepting new API connections
+  after about 35 days of uptime while its existing connection kept working. Nothing
+  showed until that connection dropped, and then nothing could reconnect. ESPHome's
+  `reboot_timeout` did not catch it, and a power cycle was the only fix. The example
+  config now includes a diagnostic Restart button, but it would not help in this case,
+  because it lives on the same API that stopped answering. Until there is a device-side
+  self-heal, an uptime alert in Home Assistant (the test install warns at 21 days) and a
+  planned reboot are the workaround.
 
 ## Repository layout
 
@@ -119,6 +153,7 @@ controller had long since died.
 - `firmware/pool-bridge.yaml` a complete example device config.
 - `jandy/`, `tests/` a Python reference implementation of the protocol logic and its
   unit tests. The C++ mirrors these and self-tests the same vectors on boot.
+- `tools/capture_logs.py` a device log capture client with a selectable log level.
 - `docs/` the roadmap and the design and build history.
 
 ## Credits
