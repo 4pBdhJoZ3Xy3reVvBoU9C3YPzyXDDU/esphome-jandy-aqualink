@@ -14,8 +14,8 @@ pump on the same bus, on an M5Stack Atom Lite (about $20 of hardware).
 The test bridge has run the real pool since late May 2026, with Home Assistant as the
 daily pump scheduler since June 4. As of November 14 it was 29 days into its current
 uptime, had answered about 233,000 keypad polls since that boot, and showed zero
-checksum errors. Current firmware is built on ESPHome 2026.9.1. Two problems turned up
-in that time, and both are written up under Known issues below.
+checksum errors. Current firmware is built on ESPHome 2026.9.1. One API problem turned up
+in that time, and it is written up under Known issues below.
 
 ## What it does
 
@@ -135,14 +135,13 @@ controller had long since died.
   device unable to accept any client again, and recovery took a power cycle at the
   pad. `tools/capture_logs.py` captures logs at a chosen level, but only while Home
   Assistant is fully stopped. Root cause not found yet.
-- **Wedge after about 35 days.** Once, the bridge stopped accepting new API connections
-  after about 35 days of uptime while its existing connection kept working. Nothing
-  showed until that connection dropped, and then nothing could reconnect. ESPHome's
-  `reboot_timeout` did not catch it, and a power cycle was the only fix. The example
-  config now includes a diagnostic Restart button, but it would not help in this case,
-  because it lives on the same API that stopped answering. Until there is a device-side
-  self-heal, an uptime alert in Home Assistant (the test install warns at 21 days) and a
-  planned reboot are the workaround.
+- **No self-recovery once the slot is lost.** When the API slot was lost that way,
+  ESPHome's `reboot_timeout` (15 minutes by default) did not reboot the device, and
+  nothing remote could reach it. It happened at 35 days of uptime, but uptime was not
+  the cause: right after the power cycle, a 13-minute-old device refused a second client
+  the same way. The example config now includes a diagnostic Restart button for planned
+  reboots, but it cannot help here, because it lives on the same API. A device-side
+  self-heal is not built yet.
 
 ## Repository layout
 
